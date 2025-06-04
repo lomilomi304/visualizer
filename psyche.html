@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extreme Psychedelic Audio Visualizer (Streaming Fixed)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: #fff; font-family: Arial, sans-serif; }
+        #controls { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; max-height: 90vh; overflow-y: auto; box-shadow: 0 2px 16px #000a; transition: max-width 0.4s cubic-bezier(.4,2,.6,1), opacity 0.3s, padding 0.3s, left 0.4s cubic-bezier(.4,2,.6,1); }
+        #controls.collapsed { max-width: 0; opacity: 0; padding: 0; pointer-events: none; left: -40px; }
+        #controlsToggle { position: absolute; top: 10px; left: 10px; z-index: 1100; background: rgba(0,0,0,0.7); border: none; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s; outline: none; }
+        #controlsToggle:focus { box-shadow: 0 0 0 2px #0ff; }
+        #controlsToggleIcon { font-size: 1.5em; transition: transform 0.3s; color: #0ff; text-shadow: 0 2px 8px #0ff8; }
+        #controls.collapsed ~ #controlsToggle #controlsToggleIcon { transform: rotate(180deg); }
+        input[type="file"], button { margin-bottom: 10px; display: block; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px;}
+        .control-group label { display: block; margin-bottom: 3px; font-size: 0.9em; }
+        #info { position: absolute; bottom: 10px; left: 10px; font-size: 0.8em; z-index: 999;}
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5em; display: none; z-index: 1001;}
+        #progressContainer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60vw; max-width: 400px; z-index: 1002; display: none; }
+        #progressContainer .progressBar { background: linear-gradient(90deg, #0ff, #0af, #80f); transition: width 0.2s; height: 18px; border-radius: 6px; overflow: hidden; }
+        #progressContainer .progressPercent { text-align: right; font-size: 0.9em; margin-top: 2px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <button id="controlsToggle" aria-label="Toggle Controls" style="position:absolute;top:10px;left:10px;z-index:1100;background:rgba(0,0,0,0.7);border:none;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.2s;outline:none;">
+        <span id="controlsToggleIcon" style="font-size:1.5em;transition:transform 0.3s;">⮞</span>
+    </button>
+    <div id="controls">
+        <div class="control-group">
+            <input type="file" id="audioFile" accept="audio/*">
+            <p id="fileName">Load an audio file to start.</p>
+            <button id="playButton" disabled>Play</button>
+            <button id="pauseButton" disabled>Pause</button>
+        </div>
+        <div class="control-group">
+            <label for="feedbackSlider">Feedback (Trails): <span id="feedbackValue">0.9</span></label>
+            <input type="range" id="feedbackSlider" min="0.5" max="0.99" step="0.01" value="0.9">
+        </div>
+        <div class="control-group">
+            <label for="kaleidoscopeSides">Kaleidoscope Sides: <span id="kaleidoscopeSidesValue">6</span></label>
+            <input type="range" id="kaleidoscopeSides" min="0" max="12" step="1" value="6">
+            <label for="kaleidoscopeAngle">Kaleidoscope Angle: <span id="kaleidoscopeAngleValue">0</span></label>
+            <input type="range" id="kaleidoscopeAngle" min="0" max="6.28" step="0.01" value="0">
+        </div>
+         <div class="control-group">
+            <label for="filmIntensity">Film Grain Intensity: <span id="filmIntensityValue">0.35</span></label>
+            <input type="range" id="filmIntensity" min="0" max="2" step="0.01" value="0.35">
+            <label for="filmScanlines">Film Scanlines Intensity: <span id="filmScanlinesValue">0.05</span></label>
+            <input type="range" id="filmScanlines" min="0" max="1" step="0.01" value="0.05">
+        </div>
+        <div class="control-group">
+            <label for="shockwaveToggle">Enable Shockwaves: <input type="checkbox" id="shockwaveToggle" checked></label>
+            <label for="barSparksToggle">Enable Bar Sparks: <input type="checkbox" id="barSparksToggle" checked></label>
+        </div>
+        <div class="control-group">
+            <label for="fractalOverlayToggle">Fractal Overlay: <input type="checkbox" id="fractalOverlayToggle" checked></label>
+        </div>
+        <div class="control-group">
+            <label for="ditherToggle">Floyd-Steinberg Dithering: <input type="checkbox" id="ditherToggle" checked></label>
+            <label for="ditherLineWidth">Dither Line Width: <span id="ditherLineWidthValue">0.0025</span></label>
+            <input type="range" id="ditherLineWidth" min="0.0005" max="0.01" step="0.0001" value="0.0025">
+            <label for="ditherBranchCount">Dither Branches per Line: <span id="ditherBranchCountValue">2</span></label>
+            <input type="range" id="ditherBranchCount" min="1" max="5" step="1" value="2">
+            <label for="ditherRecursion">Dither Branch Recursion: <span id="ditherRecursionValue">2</span></label>
+            <input type="range" id="ditherRecursion" min="1" max="3" step="1" value="2">
+        </div>
+    </div>
+    <div id="info">Warning: This can be very performance intensive! Adjust effects if slow.</div>
+    <div id="loading">Processing...</div>
+    <div id="progressContainer" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60vw;max-width:400px;z-index:1002;display:none;">
+        <div style="background:#222;border-radius:8px;padding:12px 18px;box-shadow:0 2px 12px #000a;">
+            <div style="font-size:1em;margin-bottom:8px;">Loading audio file...</div>
+            <div style="background:#444;border-radius:6px;overflow:hidden;height:18px;">
+                <div id="progressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#0ff,#0af,#80f);transition:width 0.2s;"></div>
+            </div>
+            <div id="progressPercent" style="text-align:right;font-size:0.9em;margin-top:2px;color:#aaa;">0%</div>
+        </div>
+    </div>
+    <button id="showProgressTest" style="position:fixed;top:10px;right:10px;z-index:2000;">Show Progress Bar (Test)</button>
+
+    <audio id="audioPlayer" style="display: none;"></audio>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/AfterimagePass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/FilmPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FilmShader.js"></script>
+
+    <script>
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let audioContext, analyser;
+        let frequencyData, timeDomainData;
+
+        let audioElement;
+        let mediaElementSource = null;
+
+        const NUM_BARS = 96;
+        const BAR_RADIUS = 25;
+        const MAX_BAR_HEIGHT = 18;
+        const BAR_THICKNESS = 0.7;
+
+        let bars = [];
+        let centralCore;
+        let starField;
+
+        let composer, afterimagePass, filmPass, kaleidoscopePass;
+
+        const MAX_CORE_PARTICLES = 2000;
+        let coreParticleSystem, coreParticleGeometry;
+        let coreParticlePositions, coreParticleAlphas, coreParticleSizes, coreParticleVelocities, coreParticleAges, coreParticleLifetimes, coreParticleColors;
+        let coreParticlesToSpawn = 0;
+
+        const MAX_SPARK_PARTICLES = 500;
+        let sparkParticleSystem, sparkParticleGeometry;
+        let sparkParticlePositions, sparkParticleAlphas, sparkParticleSizes, sparkParticleVelocities, sparkParticleAges, sparkParticleLifetimes, sparkParticleColors;
+        let currentSparkParticleIndex = 0;
+
+        const MAX_SHOCKWAVES = 10;
+        let shockwaves = [];
+        let shockwavePool = [];
+        let shockwaveSpawnTimer = 0;
+        const SHOCKWAVE_COOLDOWN = 0.2;
+
+        let flashIntensity = 0;
+        const FLASH_DECAY = 0.9;
+
+        const BASE_FOV = 75;
+        let peakLevel = 0;
+        const PEAK_DECAY_RATE = 0.92;
+        const PEAK_SENSITIVITY = 1.3;
+
+        let isPlaying = false;
+        let audioLoaded = false;
+        let pausedAt = 0;
+
+        let coreMorphTargets = {};
+        let coreMorphState = { t: 0, from: 'sphere', to: 'torus', lastSwitch: 0 };
+
+        let cameraSpinState = { spinning: false, t: 0, duration: 0, startTime: 0, type: 'none' };
+
+        const MAX_RIBBON_PARTICLES = 1200;
+        let ribbonParticleSystem, ribbonParticleGeometry;
+        let ribbonParticlePositions, ribbonParticleColors, ribbonParticleAlphas, ribbonParticleSizes, ribbonParticleAngles, ribbonParticleRadii, ribbonParticleSpeeds;
+
+        const MAX_GALAXY_PARTICLES = 3000;
+        let galaxyParticleSystem, galaxyParticleGeometry;
+        let galaxyParticlePositions, galaxyParticleColors, galaxyParticleSpeeds, galaxyParticleAngles, galaxyParticleRadii, galaxyParticleTwists;
+
+        const MAX_WAVE_PARTICLES = 900;
+        let waveParticleSystem, waveParticleGeometry;
+        let waveParticlePositions, waveParticleColors, waveParticleAngles, waveParticleRadii, waveParticleBands;
+
+        const ui = {
+            audioFile: document.getElementById('audioFile'),
+            playButton: document.getElementById('playButton'),
+            pauseButton: document.getElementById('pauseButton'),
+            fileName: document.getElementById('fileName'),
+            loading: document.getElementById('loading'),
+            audioPlayer: document.getElementById('audioPlayer'),
+            feedbackSlider: document.getElementById('feedbackSlider'),
+            feedbackValue: document.getElementById('feedbackValue'),
+            kaleidoscopeSides: document.getElementById('kaleidoscopeSides'),
+            kaleidoscopeSidesValue: document.getElementById('kaleidoscopeSidesValue'),
+            kaleidoscopeAngle: document.getElementById('kaleidoscopeAngle'),
+            kaleidoscopeAngleValue: document.getElementById('kaleidoscopeAngleValue'),
+            filmIntensity: document.getElementById('filmIntensity'),
+            filmIntensityValue: document.getElementById('filmIntensityValue'),
+            filmScanlines: document.getElementById('filmScanlines'),
+            filmScanlinesValue: document.getElementById('filmScanlinesValue'),
+            shockwaveToggle: document.getElementById('shockwaveToggle'),
+            barSparksToggle: document.getElementById('barSparksToggle'),
+            progressContainer: document.getElementById('progressContainer'),
+            progressBar: document.getElementById('progressBar'),
+            progressPercent: document.getElementById('progressPercent'),
+            showProgressTest: document.getElementById('showProgressTest'),
+            controls: document.getElementById('controls'),
+            controlsToggle: document.getElementById('controlsToggle'),
+            controlsToggleIcon: document.getElementById('controlsToggleIcon'),
+            fractalOverlayToggle: document.getElementById('fractalOverlayToggle'),
+            ditherToggle: document.getElementById('ditherToggle'),
+            ditherLineWidth: document.getElementById('ditherLineWidth'),
+            ditherLineWidthValue: document.getElementById('ditherLineWidthValue'),
+            ditherBranchCount: document.getElementById('ditherBranchCount'),
+            ditherBranchCountValue: document.getElementById('ditherBranchCountValue'),
+            ditherRecursion: document.getElementById('ditherRecursion'),
+            ditherRecursionValue: document.getElementById('ditherRecursionValue'),
+        };
+
+        const KaleidoscopeShader = {
+            uniforms: { 'tDiffuse': { value: null }, 'sides': { value: 6.0 }, 'angle': { value: 0.0 }, 'center': { value: new THREE.Vector2(0.5, 0.5) }},
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse; uniform float sides; uniform float angle; uniform vec2 center; varying vec2 vUv; const float PI = 3.14159265359;
+                void main() {
+                    if (sides == 0.0) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
+                    vec2 p = vUv - center; float r = length(p); float a = atan(p.y, p.x) + angle; float tau = PI * 2.0;
+                    a = mod(a, tau / sides); a = abs(a - tau / sides / 2.0); p = r * vec2(cos(a), sin(a)); vec2 uv = p + center;
+                    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+                    else { gl_FragColor = texture2D(tDiffuse, uv); }
+                }`
+        };
+
+        const ParticleShader = {
+             uniforms: { pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') }},
+            vertexShader: `
+                attribute float size; attribute float alpha; attribute vec3 customColor; varying float vAlpha; varying vec3 vColor;
+                void main() {
+                    vAlpha = alpha; vColor = customColor; vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+                    gl_PointSize = size * ( 300.0 / -mvPosition.z ); gl_Position = projectionMatrix * mvPosition;
+                }`,
+            fragmentShader: `
+                uniform sampler2D pointTexture; varying float vAlpha; varying vec3 vColor;
+                void main() { gl_FragColor = vec4( vColor, vAlpha ); gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord ); }`,
+            blending: THREE.AdditiveBlending, depthTest: false, transparent: true
+        };
+
+        // --- Chromatic Aberration & Color Cycle Shader ---
+        const ChromaticPsyShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'time': { value: 0 },
+                'intensity': { value: 0.008 },
+                'colorCycle': { value: 0.0 },
+            },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float intensity;
+                uniform float colorCycle;
+                varying vec2 vUv;
+                void main() {
+                    float angle = colorCycle * 6.2831 + sin(time*0.3)*0.5;
+                    float off = intensity * (0.5 + 0.5*sin(time*1.2));
+                    vec2 offset = vec2(cos(angle), sin(angle)) * off;
+                    vec4 col;
+                    col.r = texture2D(tDiffuse, vUv + offset).r;
+                    col.g = texture2D(tDiffuse, vUv).g;
+                    col.b = texture2D(tDiffuse, vUv - offset).b;
+                    col.a = 1.0;
+                    // Color cycling overlay
+                    float cycle = 0.5 + 0.5*sin(time + vUv.x*8.0 + vUv.y*8.0 + colorCycle*6.2831);
+                    col.rgb = mix(col.rgb, vec3(cycle, 1.0-cycle, sin(time+vUv.x*4.0)), 0.18 + 0.22*cycle);
+                    gl_FragColor = col;
+                }`
+        };
+
+        let chromaPsyPass;
+
+        // Fractal Palette Shader (postprocessing)
+        const FractalPaletteShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'iTime': { value: 0 },
+                'iResolution': { value: new THREE.Vector2() },
+                'musicDrive': { value: 0 },
+                'opacity': { value: 0.6 },
+            },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float iTime;
+                uniform vec2 iResolution;
+                uniform float musicDrive;
+                uniform float opacity;
+                varying vec2 vUv;
+                
+                vec3 palette(float t) {
+                    vec3 a = vec3(0.5, 0.5, 0.5);
+                    vec3 b = vec3(0.5, 0.5, 0.5);
+                    vec3 c = vec3(1.0, 1.0, 1.0);
+                    vec3 d = vec3(0.263,0.416,0.557);
+                    return a + b*cos(6.28318*(c*t+d));
+                }
+                // Rhizomatic connector function: draws thin, root-like lines between points
+                float connector(vec2 uv, float t, float drive) {
+                    float accum = 0.0;
+                    // Place a few anchor points in the field
+                    for (int i = 0; i < 5; i++) {
+                        float angleA = 6.2831 * float(i) / 5.0 + t * 0.13 + drive * 0.7;
+                        float angleB = angleA + 1.2 + sin(t*0.2+float(i));
+                        vec2 pA = 0.5 * vec2(cos(angleA), sin(angleA));
+                        vec2 pB = 0.5 * vec2(cos(angleB), sin(angleB));
+                        // Animate the anchor points
+                        pA += 0.13 * vec2(sin(t*0.7+float(i)), cos(t*0.5+float(i)*1.3));
+                        pB += 0.13 * vec2(cos(t*0.6+float(i)), sin(t*0.8+float(i)*1.1));
+                        // Distance to the line segment
+                        vec2 pa = uv - pA, ba = pB - pA;
+                        float h = clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);
+                        float d = length(pa - ba*h);
+                        // Thin line, modulated by music
+                        float width = 0.012 + 0.01 * drive;
+                        accum += smoothstep(width, width*0.5, d);
+                    }
+                    return clamp(accum, 0.0, 1.0);
+                }
+                void main() {
+                    vec2 fragCoord = vUv * iResolution;
+                    vec2 uv = (fragCoord * 2.0 - iResolution.xy) / iResolution.y;
+                    vec2 uv0 = uv;
+                    vec3 finalColor = vec3(0.0);
+                    float t = iTime + musicDrive * 2.0;
+                    for (float i = 0.0; i < 4.0; i++) {
+                        uv = fract(uv * (1.5 + 0.2*musicDrive)) - 0.5;
+                        float d = length(uv) * exp(-length(uv0));
+                        vec3 col = palette(length(uv0) + i*.4 + t*.4);
+                        d = sin(d*8. + t)/8.;
+                        d = abs(d);
+                        d = pow(0.01 / d, 1.2);
+                        finalColor += col * d;
+                    }
+                    finalColor = clamp(finalColor, 0.0, 1.0);
+                    // Add subtle rhizomatic connectors
+                    float conn = connector(uv0, t, musicDrive);
+                    finalColor = mix(finalColor, finalColor + vec3(0.15,0.12,0.08), conn * 0.5);
+                    vec4 sceneCol = texture2D(tDiffuse, vUv);
+                    // Blend: screen mode
+                    vec3 blend = 1.0 - (1.0 - sceneCol.rgb) * (1.0 - finalColor * opacity);
+                    gl_FragColor = vec4(mix(sceneCol.rgb, blend, opacity), 1.0);
+                }`
+        };
+
+        let fractalPalettePass;
+
+        // Floyd-Steinberg Dithering Shader
+        const DitherShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'iResolution': { value: new THREE.Vector2() },
+                'enabled': { value: 1.0 },
+                'iTime': { value: 0 },
+                'musicDrive': { value: 0 },
+                'lineWidth': { value: 0.0025 },
+                'branchCount': { value: 2 },
+                'recursionDepth': { value: 2 },
+            },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform vec2 iResolution;
+                uniform float enabled;
+                uniform float iTime;
+                uniform float musicDrive;
+                uniform float lineWidth;
+                uniform int branchCount;
+                uniform int recursionDepth;
+                varying vec2 vUv;
+                float hash(float n) { return fract(sin(n) * 43758.5453123); }
+                vec2 nodePos(float idx, float t, float drive) {
+                    float a = hash(idx*1.3+13.1) * 6.2831;
+                    float r = 0.32 + 0.18 * hash(idx*2.7+7.7);
+                    float x = 0.5 + r * cos(a + t*0.23 + drive*0.7 + sin(t*0.13+idx));
+                    float y = 0.5 + r * sin(a + t*0.19 + drive*0.9 + cos(t*0.17-idx));
+                    x += 0.08 * sin(t*0.7 + idx*1.1 + drive*1.2);
+                    y += 0.08 * cos(t*0.6 + idx*1.3 - drive*1.1);
+                    return vec2(x, y);
+                }
+                float segDist(vec2 p, vec2 a, vec2 b) {
+                    vec2 pa = p - a, ba = b - a;
+                    float h = clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);
+                    return length(pa - ba*h);
+                }
+                // Unrolled fractal branching (no recursion)
+                float branchDist(vec2 p, vec2 root, vec2 dir, float l, float t, float seed, int depth, float width) {
+                    float minD = 1.0;
+                    vec2 prev = root;
+                    float segs = 5.0;
+                    for (float s = 1.0; s <= segs; s += 1.0) {
+                        float f = s / segs;
+                        float angle = 0.7 * (hash(seed + s*13.7) - 0.5) + 0.5 * sin(t*1.2 + seed + s*0.7);
+                        float mag = l * f;
+                        vec2 pt = root + dir * mag;
+                        pt += 0.04 * vec2(sin(seed + t*1.3 + s*2.1), cos(seed + t*1.7 + s*1.3)) * (hash(seed + s*7.3) - 0.5);
+                        pt += 0.03 * vec2(sin(t*2.0 + s*1.1 + seed), cos(t*2.3 + s*1.4 - seed)) * musicDrive;
+                        float c = cos(angle), s_ = sin(angle);
+                        pt = root + mat2(c,-s_,s_,c) * (pt-root);
+                        float d = segDist(p, prev, pt);
+                        minD = min(minD, d);
+                        // Unrolled sub-branches (up to 2 levels)
+                        if (depth > 1 && s > 1.0 && s < segs && hash(seed+s*3.1) > 0.5) {
+                            float subAngle = angle + 1.2 * (hash(seed+s*5.7)-0.5);
+                            vec2 subDir = vec2(cos(subAngle), sin(subAngle));
+                            float subLen = l * 0.45;
+                            float subWidth = width * 0.7;
+                            float subSeed = seed + s*11.3;
+                            // Level 1 sub-branch
+                            vec2 subPrev = pt;
+                            for (float ss = 1.0; ss <= 4.0; ss += 1.0) {
+                                float sf = ss / 4.0;
+                                float sangle = 0.7 * (hash(subSeed + ss*13.7) - 0.5) + 0.5 * sin(t*1.2 + subSeed + ss*0.7);
+                                float smag = subLen * sf;
+                                vec2 spt = pt + subDir * smag;
+                                spt += 0.03 * vec2(sin(subSeed + t*1.1 + ss*2.1), cos(subSeed + t*1.3 + ss*1.3)) * (hash(subSeed + ss*7.3) - 0.5);
+                                spt += 0.02 * vec2(sin(t*2.0 + ss*1.1 + subSeed), cos(t*2.3 + ss*1.4 - subSeed)) * musicDrive;
+                                float sc = cos(sangle), ss_ = sin(sangle);
+                                spt = pt + mat2(sc,-ss_,ss_,sc) * (spt-pt);
+                                float sd = segDist(p, subPrev, spt);
+                                minD = min(minD, sd);
+                                // Level 2 sub-branch (if recursionDepth >= 3)
+                                if (depth > 2 && ss > 1.0 && ss < 4.0 && hash(subSeed+ss*2.1) > 0.5) {
+                                    float sub2Angle = sangle + 1.2 * (hash(subSeed+ss*5.7)-0.5);
+                                    vec2 sub2Dir = vec2(cos(sub2Angle), sin(sub2Angle));
+                                    float sub2Len = subLen * 0.45;
+                                    float sub2Width = subWidth * 0.7;
+                                    float sub2Seed = subSeed + ss*17.3;
+                                    vec2 sub2Prev = spt;
+                                    for (float sss = 1.0; sss <= 3.0; sss += 1.0) {
+                                        float ssf = sss / 3.0;
+                                        float ssangle = 0.7 * (hash(sub2Seed + sss*13.7) - 0.5) + 0.5 * sin(t*1.2 + sub2Seed + sss*0.7);
+                                        float ssmag = sub2Len * ssf;
+                                        vec2 sspt = spt + sub2Dir * ssmag;
+                                        sspt += 0.02 * vec2(sin(sub2Seed + t*1.1 + sss*2.1), cos(sub2Seed + t*1.3 + sss*1.3)) * (hash(sub2Seed + sss*7.3) - 0.5);
+                                        sspt += 0.01 * vec2(sin(t*2.0 + sss*1.1 + sub2Seed), cos(t*2.3 + sss*1.4 - sub2Seed)) * musicDrive;
+                                        float ssc = cos(ssangle), sss_ = sin(ssangle);
+                                        sspt = spt + mat2(ssc,-sss_,sss_,ssc) * (sspt-spt);
+                                        float ssd = segDist(p, sub2Prev, sspt);
+                                        minD = min(minD, ssd);
+                                        sub2Prev = sspt;
+                                    }
+                                }
+                                subPrev = spt;
+                            }
+                        }
+                        prev = pt;
+                    }
+                    return minD;
+                }
+                void main() {
+                    vec2 fragCoord = vUv * iResolution;
+                    vec4 col = texture2D(tDiffuse, vUv);
+                    if (enabled < 0.5) { gl_FragColor = col; return; }
+                    float t = iTime * 0.7 + musicDrive * 1.5;
+                    const int N = 20;
+                    float minDist = 1.0;
+                    for (int i = 0; i < N; i++) {
+                        vec2 pi = nodePos(float(i), t, musicDrive);
+                        for (int j = i+1; j < N; j++) {
+                            vec2 pj = nodePos(float(j), t, musicDrive);
+                            float d = distance(pi, pj);
+                            if (d < 0.28) {
+                                float distToLine = segDist(vUv, pi, pj);
+                                minDist = min(minDist, distToLine);
+                                for (int b = 0; b < branchCount; b++) {
+                                    float branchSeed = float(i*31 + j*17 + b*13);
+                                    float along = hash(branchSeed + t*0.2) * 0.7 + 0.15;
+                                    vec2 root = mix(pi, pj, along);
+                                    float theta = atan(pj.y-pi.y, pj.x-pi.x) + 1.2 * (hash(branchSeed+1.7)-0.5);
+                                    vec2 dir = vec2(cos(theta), sin(theta));
+                                    float len = 0.06 + 0.04 * hash(branchSeed+2.3);
+                                    float branchD = branchDist(vUv, root, dir, len, t, branchSeed, recursionDepth, lineWidth*0.7);
+                                    minDist = min(minDist, branchD);
+                                }
+                            }
+                        }
+                    }
+                    float mask = smoothstep(lineWidth, lineWidth*0.5, minDist);
+                    float gray = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+                    float dithered = gray < 0.5 ? 0.0 : 1.0;
+                    vec3 ditherCol = vec3(dithered);
+                    vec3 finalCol = mix(col.rgb, ditherCol, mask);
+                    gl_FragColor = vec4(finalCol, col.a);
+                }`
+        };
+
+        let ditherPass;
+
+        function createMorphTargetGeometry(type) {
+            switch(type) {
+                case 'sphere':
+                    return new THREE.SphereGeometry(5, 128, 128);
+                case 'torus':
+                    return new THREE.TorusGeometry(5, 1.5, 64, 128);
+                case 'knot':
+                default:
+                    return new THREE.TorusKnotGeometry(5, 1, 200, 24, 3, 4);
+            }
+        }
+
+        function morphGeometries(geomA, geomB, t) {
+            // Assumes same vertex count and order
+            const posA = geomA.attributes.position.array;
+            const posB = geomB.attributes.position.array;
+            const out = new Float32Array(posA.length);
+            for (let i = 0; i < posA.length; i++) {
+                out[i] = posA[i] * (1 - t) + posB[i] * t;
+            }
+            return out;
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 3000);
+            camera.position.set(0, 15, 50);
+            camera.lookAt(scene.position);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+            const pLight1 = new THREE.PointLight(0xff00aa, 0.8, 500); pLight1.position.set(0, 25, 40); scene.add(pLight1);
+            const pLight2 = new THREE.PointLight(0x00aaff, 0.8, 500); pLight2.position.set(0, -15, -40); scene.add(pLight2);
+            const pLight3 = new THREE.PointLight(0x00ffaa, 0.5, 300); pLight3.position.set(30, 0, 0); scene.add(pLight3);
+            scene.userData.lights = { pLight1, pLight2, pLight3 };
+
+            // --- Morph targets for core ---
+            coreMorphTargets.sphere = createMorphTargetGeometry('sphere');
+            coreMorphTargets.torus = createMorphTargetGeometry('torus');
+            coreMorphTargets.knot = createMorphTargetGeometry('knot');
+            // Use sphere geometry as base
+            const baseGeom = coreMorphTargets.sphere.clone();
+            const coreMaterial = new THREE.MeshPhongMaterial({ color: 0xff00ff, emissive: 0x660066, shininess: 90, specular: 0xffddff, flatShading: false });
+            centralCore = new THREE.Mesh(baseGeom, coreMaterial);
+            scene.add(centralCore);
+
+            const barGeometry = new THREE.CylinderGeometry(BAR_THICKNESS / 2, BAR_THICKNESS * 0.8, 1, 8, 1);
+            for (let i = 0; i < NUM_BARS; i++) {
+                const barMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x333333, shininess: 60 });
+                const bar = new THREE.Mesh(barGeometry, barMaterial);
+                const angle = (i / NUM_BARS) * Math.PI * 2;
+                bar.position.x = Math.cos(angle) * BAR_RADIUS; bar.position.z = Math.sin(angle) * BAR_RADIUS; bar.rotation.y = -angle;
+                bars.push(bar); scene.add(bar);
+            }
+
+            const starVertices = [];
+            for (let i = 0; i < 25000; i++) starVertices.push(THREE.MathUtils.randFloatSpread(3500));
+            const starGeom = new THREE.BufferGeometry(); starGeom.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            starField = new THREE.Points(starGeom, new THREE.PointsMaterial({ color: 0xbbbbbb, size: 0.2, fog: false }));
+            scene.add(starField);
+
+            // Initialize AudioContext and persistent AnalyserNode here
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioElement = ui.audioPlayer;
+
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.75;
+            frequencyData = new Uint8Array(analyser.frequencyBinCount);
+            timeDomainData = new Uint8Array(analyser.frequencyBinCount);
+            analyser.connect(audioContext.destination); // Connect analyser to output once
+
+            audioElement.onended = () => {
+                isPlaying = false; ui.playButton.disabled = false; ui.pauseButton.disabled = true; pausedAt = 0;
+                console.log("Audio playback ended.");
+            };
+
+            initCoreParticles(); initSparkParticles(); initRibbonParticles(); initGalaxyParticles(); initWaveParticles(); initShockwaves(); initPostProcessing(); initControls();
+            animate();
+        }
+
+        function initControls() {
+            ui.audioFile.addEventListener('change', handleAudioFile);
+            ui.playButton.addEventListener('click', playAudio);
+            ui.pauseButton.addEventListener('click', pauseAudio);
+            ui.feedbackSlider.addEventListener('input', (e) => { if (afterimagePass) afterimagePass.uniforms["damp"].value = parseFloat(e.target.value); ui.feedbackValue.textContent = e.target.value; });
+            ui.kaleidoscopeSides.addEventListener('input', (e) => { if (kaleidoscopePass) kaleidoscopePass.uniforms['sides'].value = parseFloat(e.target.value); ui.kaleidoscopeSidesValue.textContent = e.target.value; });
+            ui.kaleidoscopeAngle.addEventListener('input', (e) => { if (kaleidoscopePass) kaleidoscopePass.uniforms['angle'].value = parseFloat(e.target.value); ui.kaleidoscopeAngleValue.textContent = e.target.value; });
+            ui.filmIntensity.addEventListener('input', (e) => { if (filmPass) filmPass.uniforms.nIntensity.value = parseFloat(e.target.value); ui.filmIntensityValue.textContent = e.target.value; });
+            ui.filmScanlines.addEventListener('input', (e) => { if (filmPass) filmPass.uniforms.sIntensity.value = parseFloat(e.target.value); ui.filmScanlinesValue.textContent = e.target.value; });
+            window.addEventListener('resize', onWindowResize, false);
+            ui.showProgressTest.addEventListener('click', () => {
+                console.log('[DEBUG] Manual progress bar show button clicked');
+                ui.progressContainer.style.display = 'block';
+                ui.progressBar.style.width = '50%';
+                ui.progressPercent.textContent = '50%';
+            });
+            // Collapsible controls panel logic
+            ui.controlsToggle.addEventListener('click', () => {
+                const collapsed = ui.controls.classList.toggle('collapsed');
+                ui.controlsToggleIcon.style.transform = collapsed ? 'rotate(180deg)' : 'rotate(0deg)';
+                ui.controlsToggle.setAttribute('aria-expanded', !collapsed);
+            });
+            ui.fractalOverlayToggle.addEventListener('change', () => {
+                if (fractalPalettePass) fractalPalettePass.enabled = ui.fractalOverlayToggle.checked;
+            });
+            ui.ditherToggle.addEventListener('change', () => {
+                if (ditherPass) ditherPass.enabled = ui.ditherToggle.checked;
+            });
+            ui.ditherLineWidth.addEventListener('input', (e) => {
+                if (ditherPass) ditherPass.uniforms['lineWidth'].value = parseFloat(e.target.value);
+                ui.ditherLineWidthValue.textContent = e.target.value;
+            });
+            ui.ditherBranchCount.addEventListener('input', (e) => {
+                if (ditherPass) ditherPass.uniforms['branchCount'].value = parseInt(e.target.value);
+                ui.ditherBranchCountValue.textContent = e.target.value;
+            });
+            ui.ditherRecursion.addEventListener('input', (e) => {
+                if (ditherPass) ditherPass.uniforms['recursionDepth'].value = parseInt(e.target.value);
+                ui.ditherRecursionValue.textContent = e.target.value;
+            });
+        }
+
+        function initPostProcessing() {
+            composer = new THREE.EffectComposer(renderer);
+            const renderPass = new THREE.RenderPass(scene, camera); composer.addPass(renderPass);
+            kaleidoscopePass = new THREE.ShaderPass(KaleidoscopeShader); 
+            kaleidoscopePass.uniforms['sides'].value = parseFloat(ui.kaleidoscopeSides.value); 
+            kaleidoscopePass.uniforms['angle'].value = parseFloat(ui.kaleidoscopeAngle.value); 
+            composer.addPass(kaleidoscopePass);
+            filmPass = new THREE.FilmPass(parseFloat(ui.filmIntensity.value), parseFloat(ui.filmScanlines.value), 648, false); 
+            composer.addPass(filmPass);
+            chromaPsyPass = new THREE.ShaderPass(ChromaticPsyShader);
+            composer.addPass(chromaPsyPass);
+            fractalPalettePass = new THREE.ShaderPass(FractalPaletteShader);
+            fractalPalettePass.enabled = ui.fractalOverlayToggle.checked;
+            composer.addPass(fractalPalettePass);
+            ditherPass = new THREE.ShaderPass(DitherShader);
+            ditherPass.enabled = ui.ditherToggle.checked;
+            ditherPass.uniforms['lineWidth'] = { value: parseFloat(ui.ditherLineWidth.value) };
+            ditherPass.uniforms['branchCount'] = { value: parseInt(ui.ditherBranchCount.value) };
+            ditherPass.uniforms['recursionDepth'] = { value: parseInt(ui.ditherRecursion.value) };
+            composer.addPass(ditherPass);
+        }
+
+        function createParticleSystem(maxParticles, shader) {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(maxParticles * 3).fill(0); const alphas = new Float32Array(maxParticles).fill(0);
+            const sizes = new Float32Array(maxParticles).fill(0.1); const colors = new Float32Array(maxParticles * 3).fill(1);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3)); geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1)); geometry.setAttribute('customColor', new THREE.BufferAttribute(colors, 3));
+            const material = new THREE.ShaderMaterial(shader); const system = new THREE.Points(geometry, material); scene.add(system);
+            return { system, geometry, positions, alphas, sizes, colors, velocities: Array(maxParticles).fill(null).map(() => new THREE.Vector3()), ages: new Float32Array(maxParticles).fill(Infinity), lifetimes: new Float32Array(maxParticles).fill(1) };
+        }
+        function initCoreParticles() { const ps = createParticleSystem(MAX_CORE_PARTICLES, ParticleShader); coreParticleSystem = ps.system; coreParticleGeometry = ps.geometry; coreParticlePositions = ps.positions; coreParticleAlphas = ps.alphas; coreParticleSizes = ps.sizes; coreParticleVelocities = ps.velocities; coreParticleAges = ps.ages; coreParticleLifetimes = ps.lifetimes; coreParticleColors = ps.colors; }
+        function initSparkParticles() { const ps = createParticleSystem(MAX_SPARK_PARTICLES, ParticleShader); sparkParticleSystem = ps.system; sparkParticleGeometry = ps.geometry; sparkParticlePositions = ps.positions; sparkParticleAlphas = ps.alphas; sparkParticleSizes = ps.sizes; sparkParticleVelocities = ps.velocities; sparkParticleAges = ps.ages; sparkParticleLifetimes = ps.lifetimes; sparkParticleColors = ps.colors; }
+        function initRibbonParticles() {
+            const geometry = new THREE.BufferGeometry();
+            ribbonParticlePositions = new Float32Array(MAX_RIBBON_PARTICLES * 3);
+            ribbonParticleColors = new Float32Array(MAX_RIBBON_PARTICLES * 3);
+            ribbonParticleAlphas = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleSizes = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleAngles = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleRadii = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleSpeeds = new Float32Array(MAX_RIBBON_PARTICLES);
+            for (let i = 0; i < MAX_RIBBON_PARTICLES; i++) {
+                ribbonParticleAngles[i] = Math.random() * Math.PI * 2;
+                ribbonParticleRadii[i] = 8 + Math.random() * 18;
+                ribbonParticleSpeeds[i] = 0.2 + Math.random() * 0.7;
+                ribbonParticleAlphas[i] = 0.7 + Math.random() * 0.3;
+                ribbonParticleSizes[i] = 0.18 + Math.random() * 0.22;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(ribbonParticlePositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(ribbonParticleColors, 3));
+            geometry.setAttribute('alpha', new THREE.BufferAttribute(ribbonParticleAlphas, 1));
+            geometry.setAttribute('size', new THREE.BufferAttribute(ribbonParticleSizes, 1));
+            const material = new THREE.ShaderMaterial({
+                uniforms: ParticleShader.uniforms,
+                vertexShader: ParticleShader.vertexShader,
+                fragmentShader: ParticleShader.fragmentShader,
+                blending: THREE.AdditiveBlending,
+                depthTest: false,
+                transparent: true
+            });
+            ribbonParticleSystem = new THREE.Points(geometry, material);
+            scene.add(ribbonParticleSystem);
+            ribbonParticleGeometry = geometry;
+        }
+
+        function initShockwaves() {
+            const shockwaveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            for (let i = 0; i < MAX_SHOCKWAVES; i++) {
+                const shockwaveGeometry = new THREE.RingGeometry(0.1, 0.3, 64, 1, 0, Math.PI * 2);
+                const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial.clone());
+                shockwave.visible = false; shockwave.rotation.x = Math.PI / 2; scene.add(shockwave); shockwavePool.push(shockwave);
+            }
+        }
+
+        function handleAudioFile(event) {
+            console.log('[DEBUG] handleAudioFile called', event);
+            if (isPlaying) { audioElement.pause(); }
+            if (mediaElementSource) { mediaElementSource.disconnect(); mediaElementSource = null; }
+            if (audioElement.src && audioElement.src.startsWith('blob:')) { URL.revokeObjectURL(audioElement.src); }
+            audioElement.removeAttribute('src'); audioElement.load();
+
+            isPlaying = false; audioLoaded = false; pausedAt = 0;
+            ui.playButton.disabled = true; ui.pauseButton.disabled = true;
+            ui.loading.style.display = 'block'; ui.fileName.textContent = "Processing...";
+            ui.progressContainer.style.display = 'none';
+            ui.progressBar.style.width = '0%';
+            ui.progressPercent.textContent = '0%';
+
+            const file = event.target.files[0];
+            console.log('[DEBUG] File selected:', file);
+            if (file) {
+                ui.fileName.textContent = `Loading: ${file.name} (Quick Start)...`;
+                ui.progressContainer.style.display = 'block';
+                console.log('[DEBUG] progressContainer set to block');
+                ui.loading.style.display = 'none';
+                const reader = new FileReader();
+                reader.onprogress = (e) => {
+                    console.log('[DEBUG] FileReader onprogress', e);
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        ui.progressBar.style.width = percent + '%';
+                        ui.progressPercent.textContent = percent + '%';
+                    }
+                };
+                reader.onerror = (e) => {
+                    console.log('[DEBUG] FileReader onerror', e);
+                    ui.progressContainer.style.display = 'none';
+                    ui.fileName.textContent = 'Error reading file.';
+                    alert('Error reading audio file.');
+                };
+                reader.onload = (e) => {
+                    console.log('[DEBUG] FileReader onload', e);
+                    const blob = new Blob([e.target.result], { type: file.type });
+                    const objectURL = URL.createObjectURL(blob);
+                    audioElement.src = objectURL; audioElement.load();
+                    ui.progressBar.style.width = '100%';
+                    ui.progressPercent.textContent = '100%';
+                    ui.fileName.textContent = `Decoding: ${file.name}`;
+                    let onCanPlay, onErrorHandler, setupAudioChainHandler, cleanupListenersHandler;
+                    setupAudioChainHandler = () => {
+                        console.log('[DEBUG] setupAudioChainHandler called');
+                        try {
+                            mediaElementSource = audioContext.createMediaElementSource(audioElement);
+                            mediaElementSource.connect(analyser);
+                        } catch (e) {
+                            console.log('[DEBUG] Error in setupAudioChainHandler', e);
+                            console.error("Error creating or connecting MediaElementSource:", e);
+                            ui.progressContainer.style.display = 'none';
+                            ui.fileName.textContent = "Error with audio source setup.";
+                            alert("Could not set up audio processing. Please try refreshing the page."); return;
+                        }
+                        audioLoaded = true; ui.playButton.disabled = false; ui.pauseButton.disabled = true;
+                        ui.progressContainer.style.display = 'none';
+                        ui.fileName.textContent = `Ready: ${file.name}`;
+                        console.log("Audio ready for streaming playback and analysis.");
+                    };
+                    onCanPlay = () => {
+                        console.log('[DEBUG] audioElement canplay event');
+                        cleanupListenersHandler();
+                        if (audioContext.state === 'suspended') { audioContext.resume().then(setupAudioChainHandler); }
+                        else { setupAudioChainHandler(); }
+                    };
+                    onErrorHandler = (e) => {
+                        console.log('[DEBUG] audioElement error event', e);
+                        cleanupListenersHandler();
+                        ui.progressContainer.style.display = 'none';
+                        ui.fileName.textContent = "Error loading audio.";
+                        alert(`Error loading audio file: ${audioElement.error ? audioElement.error.message : 'Unknown error'}. It might be corrupted or an unsupported format.`);
+                    };
+                    cleanupListenersHandler = () => {
+                        audioElement.removeEventListener('canplay', onCanPlay);
+                        audioElement.removeEventListener('error', onErrorHandler);
+                    };
+                    audioElement.addEventListener('canplay', onCanPlay);
+                    audioElement.addEventListener('error', onErrorHandler);
+                };
+                console.log('[DEBUG] Calling reader.readAsArrayBuffer');
+                reader.readAsArrayBuffer(file);
+            } else {
+                ui.loading.style.display = 'none'; ui.fileName.textContent = "No file selected.";
+                ui.progressContainer.style.display = 'none';
+            }
+        }
+
+        function playAudio() {
+            if (!audioLoaded || isPlaying) return;
+            const playAction = () => {
+                if (pausedAt > 0 && Math.abs(audioElement.currentTime - pausedAt) > 0.1) { audioElement.currentTime = pausedAt; }
+                audioElement.play().then(() => {
+                    isPlaying = true; ui.playButton.disabled = true; ui.pauseButton.disabled = false;
+                }).catch(e => { console.error("Error playing audio:", e); ui.playButton.disabled = false; });
+            };
+            if (audioContext.state === 'suspended') { audioContext.resume().then(playAction); } else { playAction(); }
+        }
+
+        function pauseAudio() {
+            if (!isPlaying || !audioLoaded) return;
+            audioElement.pause(); pausedAt = audioElement.currentTime;
+            isPlaying = false; ui.playButton.disabled = false; ui.pauseButton.disabled = true;
+        }
+
+        function updateParticles(ps, deltaTime, origin, numToSpawn, baseColor, energyScalar, isBurst = false) {
+            const { geometry, positions, alphas, sizes, velocities, ages, lifetimes, colors } = ps;
+            let spawnedThisFrame = 0;
+            const maxSpawn = isBurst ? numToSpawn : Math.ceil(numToSpawn * deltaTime * 10);
+
+            for (let i = 0; i < positions.length / 3; i++) {
+                ages[i] += deltaTime;
+                if (ages[i] > lifetimes[i]) {
+                    if (spawnedThisFrame < maxSpawn) {
+                        ages[i] = 0; lifetimes[i] = (0.5 + Math.random() * 1.5) * (1 + energyScalar * 0.5);
+                        if (origin instanceof THREE.Vector3) {
+                            positions[i * 3] = origin.x; positions[i * 3 + 1] = origin.y; positions[i * 3 + 2] = origin.z;
+                        } else {
+                            const rScale = centralCore.geometry.parameters.radius * centralCore.scale.x * (0.8 + Math.random()*0.4) ;
+                            const theta = Math.random() * Math.PI * 2; const phi = Math.acos(Math.random() * 2 - 1);
+                            positions[i * 3] = rScale * Math.sin(phi) * Math.cos(theta) + centralCore.position.x;
+                            positions[i * 3 + 1] = rScale * Math.sin(phi) * Math.sin(theta) + centralCore.position.y;
+                            positions[i * 3 + 2] = rScale * Math.cos(phi) + centralCore.position.z;
+                        }
+                        velocities[i].set( (Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5) )
+                            .normalize().multiplyScalar((5 + Math.random() * 10) * (1 + energyScalar * 2));
+                        alphas[i] = 0.7 + Math.random() * 0.3; sizes[i] = (0.1 + Math.random() * 0.4 + energyScalar * 0.5) * 2.0;
+                        const hcl = new THREE.Color(); baseColor.getHSL(hcl);
+                        const particleHue = (hcl.h + (Math.random() - 0.5) * 0.3 + energyScalar * 0.2) % 1;
+                        const tempColor = new THREE.Color().setHSL(particleHue, 0.8 + Math.random()*0.2, 0.5 + Math.random()*0.3);
+                        colors[i*3] = tempColor.r; colors[i*3+1] = tempColor.g; colors[i*3+2] = tempColor.b;
+                        spawnedThisFrame++;
+                    } else { alphas[i] = 0; }
+                }
+                if (alphas[i] > 0) {
+                    positions[i * 3] += velocities[i].x * deltaTime;
+                    positions[i * 3 + 1] += velocities[i].y * deltaTime;
+                    positions[i * 3 + 2] += velocities[i].z * deltaTime;
+                    // SAFETY CHECK
+                    if (!isFinite(positions[i*3])) positions[i*3] = 0;
+                    if (!isFinite(positions[i*3+1])) positions[i*3+1] = 0;
+                    if (!isFinite(positions[i*3+2])) positions[i*3+2] = 0;
+                    alphas[i] -= (0.8 / Math.max(0.1, lifetimes[i])) * deltaTime; alphas[i] = Math.max(0, alphas[i]);
+                }
+            }
+            if (spawnedThisFrame > 0 || geometry.attributes.alpha.array.some(a => a > 0)) {
+                scrubNaNPositions(positions);
+                geometry.attributes.position.needsUpdate = true; geometry.attributes.alpha.needsUpdate = true;
+                geometry.attributes.size.needsUpdate = true; geometry.attributes.customColor.needsUpdate = true;
+            }
+            return spawnedThisFrame;
+        }
+
+        function spawnShockwave(energy) {
+            if (!ui.shockwaveToggle.checked || shockwaveSpawnTimer > 0) return;
+            const shockwave = shockwavePool.find(sw => !sw.visible);
+            if (shockwave) {
+                shockwave.visible = true; shockwave.scale.set(1, 1, 1); shockwave.material.opacity = 0.8 + energy * 0.2;
+                shockwave.userData.life = 0; shockwave.userData.maxLife = 0.5 + energy * 0.5; shockwave.userData.speed = 30 + energy * 50;
+                const hue = (Date.now() * 0.0001 + energy * 0.3) % 1;
+                shockwave.material.color.setHSL(hue, 1.0, 0.6 + energy * 0.2);
+                shockwaves.push(shockwave); shockwaveSpawnTimer = SHOCKWAVE_COOLDOWN;
+            }
+        }
+
+        function updateShockwaves(deltaTime) {
+            shockwaveSpawnTimer = Math.max(0, shockwaveSpawnTimer - deltaTime);
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const sw = shockwaves[i]; sw.userData.life += deltaTime; const progress = sw.userData.life / sw.userData.maxLife;
+                if (progress >= 1) { sw.visible = false; shockwaves.splice(i, 1); }
+                else { const currentRadius = progress * sw.userData.speed; sw.scale.set(currentRadius, currentRadius, currentRadius); sw.material.opacity = (0.8 + peakLevel * 0.2) * (1 - progress * progress); }
+            }
+        }
+
+        function spawnBarSparks(bar, freqValue) {
+            if (!ui.barSparksToggle.checked || freqValue < 0.7) return;
+            const numSparks = Math.floor(freqValue * 5 * peakLevel * 2); if (numSparks === 0) return;
+            const barTipPosition = new THREE.Vector3( bar.position.x, bar.position.y + bar.scale.y / 2 + 0.5, bar.position.z );
+            for (let k=0; k < numSparks; k++) {
+                 const i = currentSparkParticleIndex % MAX_SPARK_PARTICLES; currentSparkParticleIndex++;
+                sparkParticleAges[i] = 0; sparkParticleLifetimes[i] = 0.2 + Math.random() * 0.3 + freqValue * 0.2;
+                sparkParticlePositions[i * 3] = barTipPosition.x + (Math.random() - 0.5) * 0.2; sparkParticlePositions[i * 3 + 1] = barTipPosition.y + (Math.random() - 0.5) * 0.2; sparkParticlePositions[i * 3 + 2] = barTipPosition.z + (Math.random() - 0.5) * 0.2;
+                sparkParticleVelocities[i].set( (Math.random() - 0.5), 0.5 + Math.random() * 0.5, (Math.random() - 0.5) ).normalize().multiplyScalar((2 + Math.random() * 5) * (1 + freqValue));
+                sparkParticleAlphas[i] = 0.6 + Math.random() * 0.4; sparkParticleSizes[i] = (0.05 + Math.random() * 0.1 + freqValue * 0.1) * 1.5;
+                const hcl = new THREE.Color(); bar.material.color.getHSL(hcl); const sparkHue = (hcl.h + (Math.random() - 0.5) * 0.1) % 1;
+                const tempColor = new THREE.Color().setHSL(sparkHue, 1.0, 0.7 + Math.random()*0.3);
+                sparkParticleColors[i*3] = tempColor.r; sparkParticleColors[i*3+1] = tempColor.g; sparkParticleColors[i*3+2] = tempColor.b;
+            }
+        }
+
+        const clock = new THREE.Clock();
+        let averageAmplitude = 0;
+        const SMOOTHING_FACTOR = 0.05;
+
+        function triggerCameraSpin(type = 'wild') {
+            cameraSpinState.spinning = true;
+            cameraSpinState.t = 0;
+            cameraSpinState.duration = type === 'wild' ? (0.8 + Math.random()*0.7) : (0.4 + Math.random()*0.3);
+            cameraSpinState.startTime = clock.getElapsedTime();
+            cameraSpinState.type = type;
+        }
+
+        function updateRibbonParticles(time, bassEnergy, midEnergy, highEnergy, overallAmplitude, peakLevel) {
+            for (let i = 0; i < MAX_RIBBON_PARTICLES; i++) {
+                // Spiral/orbit motion
+                let baseRadius = ribbonParticleRadii[i] * (1 + 0.25 * Math.sin(time * 0.7 + i * 0.01 + bassEnergy * 2));
+                let angle = ribbonParticleAngles[i] + time * ribbonParticleSpeeds[i] * (0.7 + 1.2 * (0.3 + midEnergy * 1.2));
+                let y = Math.sin(angle * 2 + time * 0.5 + i * 0.01) * (4 + 2 * Math.sin(time * 0.3 + i * 0.02 + highEnergy * 2));
+                let x = Math.cos(angle) * baseRadius;
+                let z = Math.sin(angle) * baseRadius;
+                // Trippy undulation
+                x += Math.sin(time * 1.5 + i * 0.03) * 1.2 * (0.5 + highEnergy);
+                z += Math.cos(time * 1.2 + i * 0.04) * 1.2 * (0.5 + bassEnergy);
+                y += Math.sin(time * 2.2 + i * 0.05) * 0.7 * (0.5 + midEnergy);
+                // SAFETY CHECK
+                if (!isFinite(x) || !isFinite(y) || !isFinite(z)) { x = y = z = 0; }
+                ribbonParticlePositions[i*3] = x;
+                ribbonParticlePositions[i*3+1] = y;
+                ribbonParticlePositions[i*3+2] = z;
+                // Color cycling
+                const hue = ((angle / Math.PI * 0.5) + time * 0.08 + i * 0.001 + peakLevel * 0.2) % 1;
+                const color = new THREE.Color().setHSL(hue, 0.85, 0.55 + 0.25 * Math.sin(time + i * 0.01));
+                ribbonParticleColors[i*3] = color.r;
+                ribbonParticleColors[i*3+1] = color.g;
+                ribbonParticleColors[i*3+2] = color.b;
+                // Alpha and size pulse
+                ribbonParticleAlphas[i] = 0.5 + 0.5 * Math.abs(Math.sin(time * 1.2 + i * 0.02 + overallAmplitude * 2));
+                ribbonParticleSizes[i] = 0.18 + 0.22 * Math.abs(Math.sin(time * 1.5 + i * 0.03 + peakLevel * 2));
+            }
+            scrubNaNPositions(ribbonParticlePositions);
+            ribbonParticleGeometry.attributes.position.needsUpdate = true;
+            ribbonParticleGeometry.attributes.customColor.needsUpdate = true;
+            ribbonParticleGeometry.attributes.alpha.needsUpdate = true;
+            ribbonParticleGeometry.attributes.size.needsUpdate = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = Math.min(clock.getDelta(), 0.1); const time = clock.getElapsedTime();
+            let overallAmplitude = 0, bassEnergy = 0, midEnergy = 0, highEnergy = 0;
+            let musicDrive = 0;
+            if (isPlaying && analyser && frequencyData) {
+                analyser.getByteFrequencyData(frequencyData); analyser.getByteTimeDomainData(timeDomainData);
+                let sum = 0; for (let val of timeDomainData) sum += Math.abs(val - 128);
+                overallAmplitude = Math.min( (sum / timeDomainData.length) / 70, 1);
+                averageAmplitude = averageAmplitude * (1 - SMOOTHING_FACTOR) + overallAmplitude * SMOOTHING_FACTOR;
+                peakLevel = Math.max(peakLevel * PEAK_DECAY_RATE, (overallAmplitude - averageAmplitude * PEAK_SENSITIVITY) * 1.5 );
+                peakLevel = Math.max(0, Math.min(peakLevel, 1.2));
+                const bins = frequencyData.length;
+                for (let i = 0; i < bins; i++) {
+                    if (i < bins * 0.1) bassEnergy += frequencyData[i];
+                    else if (i < bins * 0.4) midEnergy += frequencyData[i];
+                    else highEnergy += frequencyData[i];
+                }
+                bassEnergy = Math.min((bassEnergy / (bins * 0.1 * 255)), 1) * 1.2;
+                midEnergy = Math.min((midEnergy / (bins * 0.4 * 255)), 1);
+                highEnergy = Math.min((highEnergy / (bins * 0.5 * 255)), 1);
+                musicDrive = 0.5 * (peakLevel + bassEnergy + midEnergy + highEnergy);
+
+                if (peakLevel > 0.7 && Math.random() > 0.7) flashIntensity = peakLevel * 0.8;
+                if (peakLevel > 0.6) coreParticlesToSpawn = Math.floor(peakLevel * 50 + bassEnergy * 30);
+                let spawnedCore = updateParticles( { geometry: coreParticleGeometry, positions: coreParticlePositions, alphas: coreParticleAlphas, sizes: coreParticleSizes, velocities: coreParticleVelocities, ages: coreParticleAges, lifetimes: coreParticleLifetimes, colors: coreParticleColors }, deltaTime, centralCore.position, coreParticlesToSpawn, centralCore.material.color, overallAmplitude + bassEnergy, true );
+                coreParticlesToSpawn = Math.max(0, coreParticlesToSpawn - spawnedCore);
+                if (bassEnergy > 0.6 || peakLevel > 0.5) spawnShockwave(bassEnergy + peakLevel * 0.5);
+
+                // --- Core morphing logic ---
+                // Switch morph target every ~8-12 seconds or on strong peak
+                if (time - coreMorphState.lastSwitch > 8 + Math.random()*4 || peakLevel > 1.0) {
+                    const morphs = ['sphere','torus','knot'];
+                    let next;
+                    do { next = morphs[Math.floor(Math.random()*morphs.length)]; } while (next === coreMorphState.to);
+                    coreMorphState.from = coreMorphState.to;
+                    coreMorphState.to = next;
+                    coreMorphState.t = 0;
+                    coreMorphState.lastSwitch = time;
+                }
+                // Morph progress
+                coreMorphState.t = Math.min(1, coreMorphState.t + deltaTime * (0.15 + overallAmplitude * 1.2));
+                // Morph between from/to
+                const geomA = coreMorphTargets[coreMorphState.from];
+                const geomB = coreMorphTargets[coreMorphState.to];
+                const morphed = morphGeometries(geomA, geomB, coreMorphState.t);
+                // Vertex displacement for trippy effect
+                const posAttr = centralCore.geometry.attributes.position;
+                for (let i = 0; i < morphed.length; i += 3) {
+                    let x = morphed[i], y = morphed[i+1], z = morphed[i+2];
+                    const r = Math.sqrt(x*x + y*y + z*z);
+                    const theta = Math.atan2(y, x);
+                    const phi = Math.acos(z / (r+0.0001));
+                    const disp = 0.7 + Math.sin(time*2 + theta*3 + phi*5) * (0.5 + bassEnergy*1.5) + Math.cos(time*3 + phi*7) * (0.3 + highEnergy*1.2);
+                    // SAFETY CHECK
+                    if (!isFinite(x) || !isFinite(y) || !isFinite(z) || !isFinite(disp)) { x = y = z = 0; }
+                    posAttr.array[i] = x * disp;
+                    posAttr.array[i+1] = y * disp;
+                    posAttr.array[i+2] = z * disp;
+                }
+                scrubNaNPositions(posAttr.array);
+                posAttr.needsUpdate = true;
+                const coreScaleFactor = 1 + overallAmplitude * 1.5 + bassEnergy * 1.0 + peakLevel * 0.5;
+                centralCore.scale.setScalar(coreScaleFactor);
+                centralCore.material.emissiveIntensity = 0.4 + midEnergy * 0.6 + peakLevel * 0.3;
+                centralCore.rotation.x += (0.01 + overallAmplitude * 0.1 + bassEnergy * 0.05 + peakLevel * 0.1) * deltaTime * 30;
+                centralCore.rotation.y += (0.015 + overallAmplitude * 0.12 + midEnergy * 0.06 + peakLevel * 0.12) * deltaTime * 30;
+                centralCore.rotation.z += (highEnergy * 0.08 + peakLevel * 0.08) * deltaTime * 30;
+                const coreHue = (time * 0.02 + bassEnergy * 0.15 + peakLevel * 0.1) % 1;
+                centralCore.material.color.setHSL(coreHue, 0.85, 0.45 + midEnergy * 0.2 + peakLevel * 0.1);
+                centralCore.material.emissive.setHSL(coreHue, 0.75, 0.25 + midEnergy * 0.2);
+
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const bar = bars[i];
+                    const freqIndex = Math.floor(i * (analyser.frequencyBinCount / NUM_BARS));
+                    const freqValue = frequencyData[freqIndex] / 255;
+                    // --- Trippy bar bending, twisting, and rippling ---
+                    const ripple = Math.sin(time * 2.2 + i * 0.18 + peakLevel * 2.5) * 0.5 + Math.cos(time * 1.7 + i * 0.13 + bassEnergy * 2.5) * 0.5;
+                    const twist = Math.sin(time * 1.3 + i * 0.11 + midEnergy * 2.5) * 0.7;
+                    const bend = Math.cos(time * 1.5 + i * 0.15 + highEnergy * 2.5) * 0.7;
+                    bar.scale.y = Math.max(0.01, 0.1 + freqValue * MAX_BAR_HEIGHT * (1 + peakLevel * 0.8 + bassEnergy * 0.3) + Math.abs(ripple) * 0.7);
+                    bar.position.y = bar.scale.y / 2 + bend * 0.7;
+                    bar.rotation.x = (freqValue * Math.PI * 0.25 + peakLevel * 0.4 + bassEnergy * freqValue * 0.3) * (i % 2 === 0 ? 1 : -1) + twist * 0.5;
+                    bar.rotation.z = bend * 0.3 + ripple * 0.2;
+                    // --- Glow effect ---
+                    bar.material.emissiveIntensity = 0.5 + freqValue * 1.2 + peakLevel * 0.7;
+                    // --- Color cycling ---
+                    const hue = (i / NUM_BARS + time * 0.05 + freqValue * 0.15 + peakLevel * 0.1) % 1;
+                    const saturation = 0.75 + freqValue * 0.25 + peakLevel * 0.2;
+                    const lightness = 0.35 + freqValue * 0.45 + peakLevel * 0.15;
+                    bar.material.color.setHSL(hue, saturation, lightness);
+                    bar.material.emissive.setHSL(hue, saturation, lightness * 0.45);
+                    spawnBarSparks(bar, freqValue);
+                }
+                 updateParticles( { geometry: sparkParticleGeometry, positions: sparkParticlePositions, alphas: sparkParticleAlphas, sizes: sparkParticleSizes, velocities: sparkParticleVelocities, ages: sparkParticleAges, lifetimes: sparkParticleLifetimes, colors: sparkParticleColors }, deltaTime, null, 0, null, 0 );
+
+                // --- Camera wild spin/zoom trigger ---
+                if (!cameraSpinState.spinning && (peakLevel > 1.05 && Math.random() > 0.7)) {
+                    triggerCameraSpin('wild');
+                }
+            } else {
+                musicDrive = 0;
+                peakLevel *= PEAK_DECAY_RATE * 0.8; flashIntensity *= FLASH_DECAY * 0.8;
+                bars.forEach((bar, i) => { bar.scale.y = 0.1 + Math.sin(time * 0.5 + i * 0.5) * 0.05 + 0.05; bar.position.y = bar.scale.y / 2; bar.material.color.setHSL((i / NUM_BARS + time * 0.05) % 1, 0.6, 0.2); });
+                centralCore.rotation.x += 0.005 * deltaTime * 60; centralCore.rotation.y += 0.007 * deltaTime * 60;
+                 updateParticles( { geometry: coreParticleGeometry, positions: coreParticlePositions, alphas: coreParticleAlphas, sizes: coreParticleSizes, velocities: coreParticleVelocities, ages: coreParticleAges, lifetimes: coreParticleLifetimes, colors: coreParticleColors }, deltaTime, centralCore.position, 0.1, centralCore.material.color, 0.05 );
+                // ... fallback idle morph
+                const geomA = coreMorphTargets[coreMorphState.from];
+                const geomB = coreMorphTargets[coreMorphState.to];
+                const morphed = morphGeometries(geomA, geomB, coreMorphState.t);
+                const posAttr = centralCore.geometry.attributes.position;
+                for (let i = 0; i < morphed.length; i += 3) {
+                    let x = morphed[i], y = morphed[i+1], z = morphed[i+2];
+                    const r = Math.sqrt(x*x + y*y + z*z);
+                    const theta = Math.atan2(y, x);
+                    const phi = Math.acos(z / (r+0.0001));
+                    const disp = 0.7 + Math.sin(time*2 + theta*3 + phi*5) * 0.5 + Math.cos(time*3 + phi*7) * 0.3;
+                    // SAFETY CHECK
+                    if (!isFinite(x) || !isFinite(y) || !isFinite(z) || !isFinite(disp)) { x = y = z = 0; }
+                    posAttr.array[i] = x * disp;
+                    posAttr.array[i+1] = y * disp;
+                    posAttr.array[i+2] = z * disp;
+                }
+                scrubNaNPositions(posAttr.array);
+                posAttr.needsUpdate = true;
+            }
+
+            updateShockwaves(deltaTime);
+            const lights = scene.userData.lights;
+            lights.pLight1.intensity = 0.5 + midEnergy * 0.7 + peakLevel * 0.5; lights.pLight1.color.setHSL((time * 0.03 + bassEnergy * 0.2) % 1, 0.9, 0.55);
+            lights.pLight2.intensity = 0.5 + highEnergy * 0.7 + peakLevel * 0.4; lights.pLight2.color.setHSL((time * 0.035 + midEnergy * 0.2 + 0.5) % 1, 0.9, 0.55);
+            lights.pLight3.intensity = peakLevel > 0.4 ? (Math.random() > 0.3 ? peakLevel * 1.5 : 0.1) : 0.2 + bassEnergy * 0.3;
+            lights.pLight3.position.x = Math.sin(time * 0.5 + bassEnergy) * (30 + midEnergy * 10); lights.pLight3.position.z = Math.cos(time * 0.4 + midEnergy) * (20 + highEnergy * 5);
+
+            // --- Dynamic camera orbits and spins ---
+            let camBaseRadius = 40 + 18 * Math.sin(time * 0.13 + bassEnergy * 2.5) + 10 * peakLevel;
+            let camTheta = time * (0.18 + 0.12 * midEnergy) + Math.sin(time * 0.3) * 0.2;
+            let camPhi = Math.PI/2 + Math.sin(time * 0.11 + highEnergy * 2.5) * 0.25 + Math.cos(time * 0.17 + bassEnergy) * 0.18;
+            let camY = 10 + Math.sin(time * 0.2) * 8 + highEnergy * 12 + peakLevel * 5;
+            let camZ = camBaseRadius * Math.cos(camTheta) * Math.sin(camPhi) + 45;
+            let camX = camBaseRadius * Math.sin(camTheta) * Math.sin(camPhi);
+            // Camera spin/zoom effect
+            if (cameraSpinState.spinning) {
+                cameraSpinState.t = (time - cameraSpinState.startTime) / cameraSpinState.duration;
+                if (cameraSpinState.t >= 1) {
+                    cameraSpinState.spinning = false;
+                    cameraSpinState.t = 0;
+                } else {
+                    // Wild spin: rotate camera around core, zoom in/out, and roll
+                    const spinT = Math.sin(cameraSpinState.t * Math.PI);
+                    camTheta += spinT * Math.PI * 2 * (cameraSpinState.type === 'wild' ? 1.5 : 0.7);
+                    camPhi += spinT * 0.7;
+                    camY += spinT * 18;
+                    camZ += spinT * 18;
+                    camera.rotation.z = spinT * Math.PI * (cameraSpinState.type === 'wild' ? 1 : 0.5);
+                    camera.fov = BASE_FOV - peakLevel * 30 + bassEnergy * 5 + spinT * 30;
+                }
+            } else {
+                camera.rotation.z = peakLevel * (Math.sin(time * 5)) * 0.4 - bassEnergy * 0.1;
+                camera.fov = BASE_FOV - peakLevel * 30 + bassEnergy * 5;
+            }
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(centralCore.position);
+            camera.fov = Math.max(20, Math.min(100, camera.fov));
+            camera.updateProjectionMatrix();
+
+            starField.rotation.x += (0.0001 + bassEnergy * 0.0008 + peakLevel * 0.0005) * deltaTime * 60;
+            starField.rotation.y += (0.0002 + midEnergy * 0.0008 + peakLevel * 0.0005) * deltaTime * 60;
+
+            if (flashIntensity > 0.01) {
+                const flashColor = new THREE.Color().setHSL(Math.random(), 0.3, 0.5 + flashIntensity * 0.5);
+                if (!scene.userData.originalBackground) { scene.userData.originalBackground = scene.background ? scene.background.clone() : null; }
+                scene.background = flashColor; flashIntensity *= FLASH_DECAY;
+            } else if (scene.userData.originalBackground !== undefined) {
+                scene.background = scene.userData.originalBackground; delete scene.userData.originalBackground;
+            }
+            updateRibbonParticles(time, bassEnergy, midEnergy, highEnergy, overallAmplitude, peakLevel);
+
+            // Animate chromatic shader params with music
+            if (chromaPsyPass) {
+                chromaPsyPass.uniforms['time'].value = time;
+                chromaPsyPass.uniforms['intensity'].value = 0.008 + 0.03 * (peakLevel + bassEnergy*0.7);
+                chromaPsyPass.uniforms['colorCycle'].value = (time*0.07 + midEnergy*2.5 + highEnergy*1.5) % 1;
+            }
+
+            if (fractalPalettePass) {
+                fractalPalettePass.uniforms['iTime'].value = time;
+                fractalPalettePass.uniforms['iResolution'].value.set(window.innerWidth, window.innerHeight);
+                fractalPalettePass.uniforms['musicDrive'].value = musicDrive;
+                fractalPalettePass.uniforms['opacity'].value = 0.45 + 0.25 * Math.abs(Math.sin(time*0.2 + peakLevel));
+            }
+
+            if (ditherPass) {
+                ditherPass.uniforms['iResolution'].value.set(window.innerWidth, window.innerHeight);
+                ditherPass.uniforms['enabled'].value = ui.ditherToggle.checked ? 1.0 : 0.0;
+                ditherPass.uniforms['iTime'].value = time;
+                ditherPass.uniforms['musicDrive'].value = musicDrive;
+            }
+
+            updateGalaxyParticles(time, musicDrive);
+            updateWaveParticles(time, musicDrive, frequencyData);
+
+            composer.render(deltaTime);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Galaxy/Starfield Particle System ---
+        function initGalaxyParticles() {
+            const geometry = new THREE.BufferGeometry();
+            galaxyParticlePositions = new Float32Array(MAX_GALAXY_PARTICLES * 3);
+            galaxyParticleColors = new Float32Array(MAX_GALAXY_PARTICLES * 3);
+            galaxyParticleSpeeds = new Float32Array(MAX_GALAXY_PARTICLES);
+            galaxyParticleAngles = new Float32Array(MAX_GALAXY_PARTICLES);
+            galaxyParticleRadii = new Float32Array(MAX_GALAXY_PARTICLES);
+            galaxyParticleTwists = new Float32Array(MAX_GALAXY_PARTICLES);
+            for (let i = 0; i < MAX_GALAXY_PARTICLES; i++) {
+                galaxyParticleAngles[i] = Math.random() * Math.PI * 2;
+                galaxyParticleRadii[i] = 80 + Math.random() * 220;
+                galaxyParticleSpeeds[i] = 0.02 + Math.random() * 0.08;
+                galaxyParticleTwists[i] = Math.random() * 2.5 + 1.5;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(galaxyParticlePositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(galaxyParticleColors, 3));
+            const material = new THREE.PointsMaterial({ size: 0.7, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+            galaxyParticleSystem = new THREE.Points(geometry, material);
+            scene.add(galaxyParticleSystem);
+            galaxyParticleGeometry = geometry;
+        }
+
+        function updateGalaxyParticles(time, musicDrive) {
+            for (let i = 0; i < MAX_GALAXY_PARTICLES; i++) {
+                let angle = galaxyParticleAngles[i] + time * galaxyParticleSpeeds[i] * (0.7 + musicDrive * 1.5);
+                let radius = galaxyParticleRadii[i] * (1.0 + 0.08 * Math.sin(time * 0.2 + i * 0.01 + musicDrive));
+                let twist = galaxyParticleTwists[i];
+                let x = Math.cos(angle) * radius + Math.sin(angle * twist) * 18.0 * musicDrive;
+                let y = Math.sin(angle * 0.7 + time * 0.1) * 18.0 * (0.5 + musicDrive);
+                let z = Math.sin(angle) * radius + Math.cos(angle * twist) * 18.0 * musicDrive;
+                if (!isFinite(x)) x = 0;
+                if (!isFinite(y)) y = 0;
+                if (!isFinite(z)) z = 0;
+                galaxyParticlePositions[i*3] = x;
+                galaxyParticlePositions[i*3+1] = y;
+                galaxyParticlePositions[i*3+2] = z;
+                // Color: spiral rainbow
+                const hue = ((angle / Math.PI * 0.5) + time * 0.03 + i * 0.0007 + musicDrive * 0.2) % 1;
+                const color = new THREE.Color().setHSL(hue, 0.7 + 0.3 * Math.sin(time + i * 0.01), 0.6 + 0.2 * Math.sin(time * 0.5 + i * 0.02));
+                galaxyParticleColors[i*3] = color.r;
+                galaxyParticleColors[i*3+1] = color.g;
+                galaxyParticleColors[i*3+2] = color.b;
+            }
+            scrubNaNPositions(galaxyParticlePositions);
+            galaxyParticleGeometry.attributes.position.needsUpdate = true;
+            galaxyParticleGeometry.attributes.customColor.needsUpdate = true;
+        }
+
+        // --- Concentric Wave Particle System ---
+        function initWaveParticles() {
+            const geometry = new THREE.BufferGeometry();
+            waveParticlePositions = new Float32Array(MAX_WAVE_PARTICLES * 3);
+            waveParticleColors = new Float32Array(MAX_WAVE_PARTICLES * 3);
+            waveParticleAngles = new Float32Array(MAX_WAVE_PARTICLES);
+            waveParticleRadii = new Float32Array(MAX_WAVE_PARTICLES);
+            waveParticleBands = new Float32Array(MAX_WAVE_PARTICLES);
+            for (let i = 0; i < MAX_WAVE_PARTICLES; i++) {
+                waveParticleAngles[i] = Math.random() * Math.PI * 2;
+                waveParticleRadii[i] = 12 + Math.floor(i / 60) * 3 + Math.random() * 2.5;
+                waveParticleBands[i] = Math.floor(i / 60) % 6;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(waveParticlePositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(waveParticleColors, 3));
+            const material = new THREE.PointsMaterial({ size: 0.45, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+            waveParticleSystem = new THREE.Points(geometry, material);
+            scene.add(waveParticleSystem);
+            waveParticleGeometry = geometry;
+        }
+
+        function updateWaveParticles(time, musicDrive, frequencyData) {
+            for (let i = 0; i < MAX_WAVE_PARTICLES; i++) {
+                let angle = waveParticleAngles[i] + time * (0.5 + 0.7 * musicDrive) + Math.sin(time * 0.7 + i * 0.01) * 0.2;
+                let band = waveParticleBands[i];
+                let freq = frequencyData ? frequencyData[Math.floor(band * (frequencyData.length / 6))] / 255 : 0.5;
+                let radius = waveParticleRadii[i] * (1.0 + 0.18 * Math.sin(time * 1.2 + band * 0.7 + freq * 2.5));
+                let x = Math.cos(angle) * radius;
+                let y = Math.sin(time * 1.5 + band * 0.5 + i * 0.01) * (0.7 + freq * 2.5);
+                let z = Math.sin(angle) * radius;
+                if (!isFinite(x)) x = 0;
+                if (!isFinite(y)) y = 0;
+                if (!isFinite(z)) z = 0;
+                waveParticlePositions[i*3] = x;
+                waveParticlePositions[i*3+1] = y;
+                waveParticlePositions[i*3+2] = z;
+                // Color: banded rainbow
+                const hue = ((angle / Math.PI * 0.5) + time * 0.09 + band * 0.13) % 1;
+                const color = new THREE.Color().setHSL(hue, 0.8, 0.5 + 0.2 * freq);
+                waveParticleColors[i*3] = color.r;
+                waveParticleColors[i*3+1] = color.g;
+                waveParticleColors[i*3+2] = color.b;
+            }
+            scrubNaNPositions(waveParticlePositions);
+            waveParticleGeometry.attributes.position.needsUpdate = true;
+            waveParticleGeometry.attributes.customColor.needsUpdate = true;
+        }
+
+        // Add at top-level in script:
+        function scrubNaNPositions(array) {
+            for (let i = 0; i < array.length; i++) {
+                if (!isFinite(array[i])) array[i] = 0;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
