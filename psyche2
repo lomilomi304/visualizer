@@ -1,0 +1,1933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extreme Psychedelic Audio Visualizer (Streaming Fixed)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: #fff; font-family: Arial, sans-serif; }
+        #controls { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; max-height: 90vh; overflow-y: auto; box-shadow: 0 2px 16px #000a; transition: max-width 0.4s cubic-bezier(.4,2,.6,1), opacity 0.3s, padding 0.3s, left 0.4s cubic-bezier(.4,2,.6,1); }
+        #controls.collapsed { max-width: 0; opacity: 0; padding: 0; pointer-events: none; left: -40px; }
+        #controlsToggle { position: absolute; top: 10px; left: 10px; z-index: 1100; background: rgba(0,0,0,0.7); border: none; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s; outline: none; }
+        #controlsToggle:focus { box-shadow: 0 0 0 2px #0ff; }
+        #controlsToggleIcon { font-size: 1.5em; transition: transform 0.3s; color: #0ff; text-shadow: 0 2px 8px #0ff8; }
+        #controls.collapsed ~ #controlsToggle #controlsToggleIcon { transform: rotate(180deg); }
+        input[type="file"], button { margin-bottom: 10px; display: block; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px;}
+        .control-group label { display: block; margin-bottom: 3px; font-size: 0.9em; }
+        #info { position: absolute; bottom: 10px; left: 10px; font-size: 0.8em; z-index: 999;}
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5em; display: none; z-index: 1001;}
+        #progressContainer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60vw; max-width: 400px; z-index: 1002; display: none; }
+        #progressContainer .progressBar { background: linear-gradient(90deg, #0ff, #0af, #80f); transition: width 0.2s; height: 18px; border-radius: 6px; overflow: hidden; }
+        #progressContainer .progressPercent { text-align: right; font-size: 0.9em; margin-top: 2px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <button id="controlsToggle" aria-label="Toggle Controls" style="position:absolute;top:10px;left:10px;z-index:1100;background:rgba(0,0,0,0.7);border:none;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.2s;outline:none;">
+        <span id="controlsToggleIcon" style="font-size:1.5em;transition:transform 0.3s;">⮞</span>
+    </button>
+    <div id="controls">
+        <div class="control-group">
+            <input type="file" id="audioFile" accept="audio/*">
+            <p id="fileName">Load an audio file to start.</p>
+            <button id="playButton" disabled>Play</button>
+            <button id="pauseButton" disabled>Pause</button>
+        </div>
+        <div class="control-group">
+            <label for="feedbackSlider">Feedback (Trails): <span id="feedbackValue">0.9</span></label>
+            <input type="range" id="feedbackSlider" min="0.5" max="0.99" step="0.01" value="0.9">
+        </div>
+        <div class="control-group">
+            <label for="kaleidoscopeSides">Kaleidoscope Sides: <span id="kaleidoscopeSidesValue">6</span></label>
+            <input type="range" id="kaleidoscopeSides" min="0" max="12" step="1" value="6">
+            <label for="kaleidoscopeAngle">Kaleidoscope Angle: <span id="kaleidoscopeAngleValue">0</span></label>
+            <input type="range" id="kaleidoscopeAngle" min="0" max="6.28" step="0.01" value="0">
+        </div>
+         <div class="control-group">
+            <label for="filmIntensity">Film Grain Intensity: <span id="filmIntensityValue">0.35</span></label>
+            <input type="range" id="filmIntensity" min="0" max="2" step="0.01" value="0.35">
+            <label for="filmScanlines">Film Scanlines Intensity: <span id="filmScanlinesValue">0.05</span></label>
+            <input type="range" id="filmScanlines" min="0" max="1" step="0.01" value="0.05">
+        </div>
+        <div class="control-group">
+            <label for="shockwaveToggle">Enable Shockwaves: <input type="checkbox" id="shockwaveToggle" checked></label>
+            <label for="barSparksToggle">Enable Bar Sparks: <input type="checkbox" id="barSparksToggle" checked></label>
+        </div>
+        <div class="control-group">
+            <label for="fractalOverlayToggle">Fractal Overlay: <input type="checkbox" id="fractalOverlayToggle" checked></label>
+        </div>
+        <div class="control-group">
+            <label for="patchworkToggle">Patchwork Overlay: <input type="checkbox" id="patchworkToggle" checked></label>
+        </div>
+    </div>
+    <div id="info">*</div>
+    <div id="loading">Processing...</div>
+    <div id="progressContainer" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60vw;max-width:400px;z-index:1002;display:none;">
+        <div style="background:#222;border-radius:8px;padding:12px 18px;box-shadow:0 2px 12px #000a;">
+            <div style="font-size:1em;margin-bottom:8px;">Loading audio file...</div>
+            <div style="background:#444;border-radius:6px;overflow:hidden;height:18px;">
+                <div id="progressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#0ff,#0af,#80f);transition:width 0.2s;"></div>
+            </div>
+            <div id="progressPercent" style="text-align:right;font-size:0.9em;margin-top:2px;color:#aaa;">0%</div>
+        </div>
+    </div>
+
+    <audio id="audioPlayer" style="display: none;"></audio>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/AfterimagePass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/FilmPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FilmShader.js"></script>
+
+    <script>
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let audioContext, analyser;
+        let frequencyData, timeDomainData;
+
+        // Add tempo detection variables
+        let tempoHistory = [];
+        let currentTempo = 120; // Default tempo in BPM
+        let lastBeatTime = 0;
+        let beatInterval = 0;
+        let beatCount = 0;
+        const TEMPO_HISTORY_LENGTH = 10;
+        const MIN_BEAT_INTERVAL = 0.2; // Minimum time between beats (for 300 BPM)
+        const MAX_BEAT_INTERVAL = 2.0; // Maximum time between beats (for 30 BPM)
+
+        let audioElement;
+        let mediaElementSource = null;
+
+        const NUM_BARS = 96;
+        const BAR_RADIUS = 25;
+        const MAX_BAR_HEIGHT = 18;
+        const BAR_THICKNESS = 0.7;
+
+        let bars = [];
+        let centralCore;
+        let starField;
+
+        let breathingOrb;
+        let bassDrumOrb;
+        let serpentCore; // Add this line to declare serpentCore globally
+
+        let composer, afterimagePass, filmPass, kaleidoscopePass;
+
+        const MAX_CORE_PARTICLES = 2000;
+        let coreParticleSystem, coreParticleGeometry;
+        let coreParticlePositions, coreParticleAlphas, coreParticleSizes, coreParticleVelocities, coreParticleAges, coreParticleLifetimes, coreParticleColors;
+        let coreParticlesToSpawn = 0;
+
+        const MAX_SPARK_PARTICLES = 500;
+        let sparkParticleSystem, sparkParticleGeometry;
+        let sparkParticlePositions, sparkParticleAlphas, sparkParticleSizes, sparkParticleVelocities, sparkParticleAges, sparkParticleLifetimes, sparkParticleColors;
+        let currentSparkParticleIndex = 0;
+
+        const MAX_SHOCKWAVES = 10;
+        let shockwaves = [];
+        let shockwavePool = [];
+        let shockwaveSpawnTimer = 0;
+        const SHOCKWAVE_COOLDOWN = 0.2;
+
+        let flashIntensity = 0;
+        const FLASH_DECAY = 0.9;
+
+        const BASE_FOV = 75;
+        let peakLevel = 0;
+        const PEAK_DECAY_RATE = 0.92;
+        const PEAK_SENSITIVITY = 1.3;
+
+        let isPlaying = false;
+        let audioLoaded = false;
+        let pausedAt = 0;
+
+        let coreMorphTargets = {};
+        let coreMorphState = { t: 0, from: 'sphere', to: 'torus', lastSwitch: 0 };
+
+        let cameraSpinState = { spinning: false, t: 0, duration: 0, startTime: 0, type: 'none' };
+
+        const MAX_RIBBON_PARTICLES = 1200;
+        let ribbonParticleSystem, ribbonParticleGeometry;
+        let ribbonParticlePositions, ribbonParticleColors, ribbonParticleAlphas, ribbonParticleSizes, ribbonParticleAngles, ribbonParticleRadii, ribbonParticleSpeeds;
+
+        const MAX_GALAXY_PARTICLES = 3000;
+        let galaxyParticleSystem, galaxyParticleGeometry;
+        let galaxyParticlePositions, galaxyParticleColors, galaxyParticleSpeeds, galaxyParticleAngles, galaxyParticleRadii, galaxyParticleTwists;
+
+        const MAX_WAVE_PARTICLES = 900;
+        let waveParticleSystem, waveParticleGeometry;
+        let waveParticlePositions, waveParticleColors, waveParticleAngles, waveParticleRadii, waveParticleBands;
+
+        const MAX_VORTEX_TRAIL_PARTICLES = 4000;
+        let vortexTrailSystem, vortexTrailGeometry;
+        let vortexTrailPositions, vortexTrailColors, vortexTrailAlphas, vortexTrailSizes, vortexTrailAges, vortexTrailLifetimes, vortexTrailSpeeds, vortexTrailAngles, vortexTrailRadii, vortexTrailOffsets;
+
+        const ui = {
+            audioFile: document.getElementById('audioFile'),
+            playButton: document.getElementById('playButton'),
+            pauseButton: document.getElementById('pauseButton'),
+            fileName: document.getElementById('fileName'),
+            loading: document.getElementById('loading'),
+            audioPlayer: document.getElementById('audioPlayer'),
+            feedbackSlider: document.getElementById('feedbackSlider'),
+            feedbackValue: document.getElementById('feedbackValue'),
+            kaleidoscopeSides: document.getElementById('kaleidoscopeSides'),
+            kaleidoscopeSidesValue: document.getElementById('kaleidoscopeSidesValue'),
+            kaleidoscopeAngle: document.getElementById('kaleidoscopeAngle'),
+            kaleidoscopeAngleValue: document.getElementById('kaleidoscopeAngleValue'),
+            filmIntensity: document.getElementById('filmIntensity'),
+            filmIntensityValue: document.getElementById('filmIntensityValue'),
+            filmScanlines: document.getElementById('filmScanlines'),
+            filmScanlinesValue: document.getElementById('filmScanlinesValue'),
+            shockwaveToggle: document.getElementById('shockwaveToggle'),
+            barSparksToggle: document.getElementById('barSparksToggle'),
+            progressContainer: document.getElementById('progressContainer'),
+            progressBar: document.getElementById('progressBar'),
+            progressPercent: document.getElementById('progressPercent'),
+            controls: document.getElementById('controls'),
+            controlsToggle: document.getElementById('controlsToggle'),
+            controlsToggleIcon: document.getElementById('controlsToggleIcon'),
+            fractalOverlayToggle: document.getElementById('fractalOverlayToggle'),
+            patchworkToggle: document.getElementById('patchworkToggle'),
+        };
+
+        const KaleidoscopeShader = {
+            uniforms: { 'tDiffuse': { value: null }, 'sides': { value: 6.0 }, 'angle': { value: 0.0 }, 'center': { value: new THREE.Vector2(0.5, 0.5) }},
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse; uniform float sides; uniform float angle; uniform vec2 center; varying vec2 vUv; const float PI = 3.14159265359;
+                void main() {
+                    if (sides == 0.0) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
+                    vec2 p = vUv - center; float r = length(p); float a = atan(p.y, p.x) + angle; float tau = PI * 2.0;
+                    a = mod(a, tau / sides); a = abs(a - tau / sides / 2.0); p = r * vec2(cos(a), sin(a)); vec2 uv = p + center;
+                    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+                    else { gl_FragColor = texture2D(tDiffuse, uv); }
+                }`
+        };
+
+        const ParticleShader = {
+             uniforms: { pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') }},
+            vertexShader: `
+                attribute float size; attribute float alpha; attribute vec3 customColor; varying float vAlpha; varying vec3 vColor;
+                void main() {
+                    vAlpha = alpha; vColor = customColor; vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+                    gl_PointSize = size * ( 300.0 / -mvPosition.z ); gl_Position = projectionMatrix * mvPosition;
+                }`,
+            fragmentShader: `
+                uniform sampler2D pointTexture; varying float vAlpha; varying vec3 vColor;
+                void main() { gl_FragColor = vec4( vColor, vAlpha ); gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord ); }`,
+            blending: THREE.AdditiveBlending, depthTest: false, transparent: true
+        };
+
+        // --- Chromatic Aberration & Color Cycle Shader ---
+        const ChromaticPsyShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'time': { value: 0 },
+                'intensity': { value: 0.008 },
+                'colorCycle': { value: 0.0 },
+            },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float time;
+                uniform float intensity;
+                uniform float colorCycle;
+                varying vec2 vUv;
+                void main() {
+                    float angle = colorCycle * 6.2831 + sin(time*0.3)*0.5;
+                    float off = intensity * (0.5 + 0.5*sin(time*1.2));
+                    vec2 offset = vec2(cos(angle), sin(angle)) * off;
+                    vec4 col;
+                    col.r = texture2D(tDiffuse, vUv + offset).r;
+                    col.g = texture2D(tDiffuse, vUv).g;
+                    col.b = texture2D(tDiffuse, vUv - offset).b;
+                    col.a = 1.0;
+                    // Color cycling overlay
+                    float cycle = 0.5 + 0.5*sin(time + vUv.x*8.0 + vUv.y*8.0 + colorCycle*6.2831);
+                    col.rgb = mix(col.rgb, vec3(cycle, 1.0-cycle, sin(time+vUv.x*4.0)), 0.18 + 0.22*cycle);
+                    gl_FragColor = col;
+                }`
+        };
+
+        let chromaPsyPass;
+
+        // Fractal Palette Shader (postprocessing)
+        const FractalPaletteShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'iTime': { value: 0 },
+                'iResolution': { value: new THREE.Vector2() },
+                'musicDrive': { value: 0 },
+                'opacity': { value: 0.6 },
+                'distortionPhase': { value: 0 },
+                'distortionIntensity': { value: 0.2 },  // Reduced from 0.3
+                'audioLevel': { value: 0 },
+                'minAudioThreshold': { value: 0.1 }  // Increased threshold
+            },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float iTime;
+                uniform vec2 iResolution;
+                uniform float musicDrive;
+                uniform float opacity;
+                uniform float distortionPhase;
+                uniform float distortionIntensity;
+                uniform float audioLevel;
+                uniform float minAudioThreshold;
+                varying vec2 vUv;
+                
+                vec3 palette(float t) {
+                    vec3 a = vec3(0.5, 0.5, 0.5);
+                    vec3 b = vec3(0.5, 0.5, 0.5);
+                    vec3 c = vec3(1.0, 1.0, 1.0);
+                    vec3 d = vec3(0.263,0.416,0.557);
+                    return a + b*cos(6.28318*(c*t+d));
+                }
+
+                vec2 distort(vec2 uv, float phase) {
+                    float distortion = distortionIntensity * sin(phase * 6.28318);
+                    float angle = atan(uv.y, uv.x);
+                    float radius = length(uv);
+                    
+                    float wave1 = sin(angle * 8.0 + iTime * 2.0) * distortion;
+                    float wave2 = cos(angle * 12.0 - iTime * 1.5) * distortion * 0.5;
+                    float wave3 = sin(radius * 10.0 + iTime) * distortion * 0.3;
+                    
+                    radius *= 1.0 + wave1 + wave2 + wave3;
+                    return vec2(cos(angle) * radius, sin(angle) * radius);
+                }
+                
+                float connector(vec2 uv, float t, float drive) {
+                    float accum = 0.0;
+                    for (int i = 0; i < 5; i++) {
+                        float angleA = 6.2831 * float(i) / 5.0 + t * 0.13 + drive * 0.7;
+                        float angleB = angleA + 1.2 + sin(t*0.2+float(i));
+                        vec2 pA = 0.5 * vec2(cos(angleA), sin(angleA));
+                        vec2 pB = 0.5 * vec2(cos(angleB), sin(angleB));
+                        pA += 0.13 * vec2(sin(t*0.7+float(i)), cos(t*0.5+float(i)*1.3));
+                        pB += 0.13 * vec2(cos(t*0.6+float(i)), sin(t*0.8+float(i)*1.1));
+                        vec2 pa = uv - pA, ba = pB - pA;
+                        float h = clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0);
+                        float d = length(pa - ba*h);
+                        float width = 0.012 + 0.01 * drive;
+                        accum += smoothstep(width, width*0.5, d);
+                    }
+                    return clamp(accum, 0.0, 1.0);
+                }
+                
+                void main() {
+                    vec2 fragCoord = vUv * iResolution;
+                    vec2 uv = (fragCoord * 2.0 - iResolution.xy) / iResolution.y;
+                    vec2 uv0 = uv;
+                    
+                    // More subtle time scaling
+                    float timeScale = smoothstep(minAudioThreshold, 0.3, audioLevel);
+                    float adjustedTime = iTime * mix(0.3, 1.0, timeScale);  // Increased minimum speed
+                    
+                    if (distortionPhase > 0.0) {
+                        uv = distort(uv, distortionPhase);
+                    }
+                    
+                    vec3 finalColor = vec3(0.0);
+                    float t = adjustedTime + musicDrive * 1.0;  // Reduced music drive influence
+                    
+                    for (float i = 0.0; i < 4.0; i++) {
+                        uv = fract(uv * (1.5 + 0.1*musicDrive)) - 0.5;  // Reduced music drive influence
+                        float d = length(uv) * exp(-length(uv0));
+                        vec3 col = palette(length(uv0) + i*.4 + t*.4);
+                        d = sin(d*8. + t)/8.;
+                        d = abs(d);
+                        d = pow(0.01 / d, 1.2);
+                        finalColor += col * d;
+                    }
+                    
+                    finalColor = clamp(finalColor, 0.0, 1.0);
+                    float conn = connector(uv0, t, musicDrive * 0.5);  // Reduced connector reactivity
+                    finalColor = mix(finalColor, finalColor + vec3(0.15,0.12,0.08), conn * 0.5);
+                    vec4 sceneCol = texture2D(tDiffuse, vUv);
+                    vec3 blend = 1.0 - (1.0 - sceneCol.rgb) * (1.0 - finalColor * opacity);
+                    gl_FragColor = vec4(mix(sceneCol.rgb, blend, opacity), 1.0);
+                }`
+        };
+
+        let fractalPalettePass;
+
+        function createMorphTargetGeometry(type) {
+            switch(type) {
+                case 'sphere':
+                    return new THREE.SphereGeometry(5, 128, 128);
+                case 'torus':
+                    return new THREE.TorusGeometry(5, 1.5, 64, 128);
+                case 'knot':
+                default:
+                    return new THREE.TorusKnotGeometry(5, 1, 200, 24, 3, 4);
+            }
+        }
+
+        function morphGeometries(geomA, geomB, t) {
+            // Assumes same vertex count and order
+            const posA = geomA.attributes.position.array;
+            const posB = geomB.attributes.position.array;
+            const out = new Float32Array(posA.length);
+            for (let i = 0; i < posA.length; i++) {
+                out[i] = posA[i] * (1 - t) + posB[i] * t;
+            }
+            return out;
+        }
+
+        // Add DNA helix variables at the top with other global variables
+        const NUM_HELICES = 4;  // Increased number of helices
+        const HELIX_POINTS = 50;  // Reduced points for smoother movement
+        const HELIX_RADIUS = 15;  // Reduced radius for thinner strands
+        const HELIX_HEIGHT = 60;  // Adjusted height
+        let helices = [];
+        let helixMaterials = [];
+        let helixPaths = [];  // Store path points for each helix
+
+        function createHelixPath() {
+            const points = [];
+            const numPoints = 100;
+            const radius = 45;  // Increased radius to keep helices at screen edges
+            
+            for (let i = 0; i < numPoints; i++) {
+                const t = i / (numPoints - 1);
+                const angle = t * Math.PI * 4;  // Two full rotations
+                
+                // Create a more complex path
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle * 2) * 10;  // Vertical wave
+                const z = Math.sin(angle) * radius;
+                
+                points.push(new THREE.Vector3(x, y, z));
+            }
+            
+            return points;
+        }
+
+        function createDNAHelix() {
+            const points = [];
+            const colors = [];
+            const indices = [];
+            
+            for (let i = 0; i < HELIX_POINTS; i++) {
+                const t = i / (HELIX_POINTS - 1);
+                const angle = t * Math.PI * 8;
+                const radius = HELIX_RADIUS;
+                const height = (t - 0.5) * HELIX_HEIGHT;
+                
+                // First strand
+                points.push(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+                
+                // Second strand (offset by PI)
+                points.push(
+                    Math.cos(angle + Math.PI) * radius,
+                    height,
+                    Math.sin(angle + Math.PI) * radius
+                );
+                
+                // Colors
+                const hue = (t + clock.getElapsedTime() * 0.1) % 1;
+                const color1 = new THREE.Color().setHSL(hue, 0.8, 0.5);
+                const color2 = new THREE.Color().setHSL((hue + 0.5) % 1, 0.8, 0.5);
+                
+                colors.push(color1.r, color1.g, color1.b);
+                colors.push(color2.r, color2.g, color2.b);
+                
+                if (i < HELIX_POINTS - 1) {
+                    const base = i * 2;
+                    indices.push(base, base + 1, base + 2);
+                    indices.push(base + 1, base + 3, base + 2);
+                }
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            
+            const material = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            
+            const helix = new THREE.Mesh(geometry, material);
+            console.log('Created DNA helix:', helix); // Debug log
+            return helix;
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 3000);
+            camera.position.set(0, 15, 50);
+            camera.lookAt(scene.position);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+            const pLight1 = new THREE.PointLight(0xff00aa, 0.8, 500); pLight1.position.set(0, 25, 40); scene.add(pLight1);
+            const pLight2 = new THREE.PointLight(0x00aaff, 0.8, 500); pLight2.position.set(0, -15, -40); scene.add(pLight2);
+            const pLight3 = new THREE.PointLight(0x00ffaa, 0.5, 300); pLight3.position.set(30, 0, 0); scene.add(pLight3);
+            scene.userData.lights = { pLight1, pLight2, pLight3 };
+
+            // --- Morph targets for core ---
+            coreMorphTargets.sphere = createMorphTargetGeometry('sphere');
+            coreMorphTargets.torus = createMorphTargetGeometry('torus');
+            coreMorphTargets.knot = createMorphTargetGeometry('knot');
+            // Use sphere geometry as base
+            const baseGeom = coreMorphTargets.sphere.clone();
+            const coreMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xff00ff, 
+                emissive: 0x660066, 
+                shininess: 90, 
+                specular: 0xffddff, 
+                flatShading: false,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
+            centralCore = new THREE.Mesh(baseGeom, coreMaterial);
+            centralCore.position.set(0, 0, 0);
+            scene.add(centralCore);
+
+            // New: Breathing Orb
+            const orbGeometry = new THREE.SphereGeometry(3, 32, 32);
+            const orbMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff, 
+                transparent: true, 
+                opacity: 0.1, // Reduced opacity
+                blending: THREE.AdditiveBlending 
+            });
+            breathingOrb = new THREE.Mesh(orbGeometry, orbMaterial);
+            breathingOrb.position.set(0, 0, -10);
+            scene.add(breathingOrb);
+
+            // New: Bass Drum Orb
+            const bassDrumOrbGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const bassDrumOrbMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff4400, 
+                transparent: true, 
+                opacity: 0.0, 
+                blending: THREE.AdditiveBlending 
+            });
+            bassDrumOrb = new THREE.Mesh(bassDrumOrbGeometry, bassDrumOrbMaterial);
+            bassDrumOrb.position.set(0, 0, 0);
+            bassDrumOrb.visible = false;
+            scene.add(bassDrumOrb);
+
+            // New: Psychedelic Serpent Core
+            const serpentGeometry = new THREE.TorusKnotGeometry(4, 0.8, 256, 32, 3, 7);
+            const serpentMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    musicDrive: { value: 0 },
+                    color1: { value: new THREE.Color(0xff00ff) },
+                    color2: { value: new THREE.Color(0x00ffff) }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying vec3 vNormal;
+                    uniform float time;
+                    uniform float musicDrive;
+                    
+                    void main() {
+                        vUv = uv;
+                        vPosition = position;
+                        vNormal = normal;
+                        
+                        // Dynamic vertex displacement
+                        float scale = 1.0 + 0.2 * musicDrive * sin(time * 2.0 + position.y * 3.0);
+                        vec3 newPosition = position * scale;
+                        
+                        // Add wave-like motion
+                        float wave = sin(time * 3.0 + position.x * 4.0) * 0.1 * musicDrive;
+                        newPosition += normal * wave;
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    varying vec2 vUv;
+                    varying vec3 vPosition;
+                    varying vec3 vNormal;
+                    uniform float time;
+                    uniform float musicDrive;
+                    uniform vec3 color1;
+                    uniform vec3 color2;
+                    
+                    void main() {
+                        // Create dynamic color patterns
+                        float pattern = sin(vPosition.x * 4.0 + time) * 
+                                      sin(vPosition.y * 4.0 + time * 1.2) * 
+                                      sin(vPosition.z * 4.0 + time * 0.8);
+                        
+                        // Add iridescent effect
+                        float iridescence = sin(dot(vNormal, vec3(0.0, 1.0, 0.0)) * 5.0 + time * 2.0);
+                        
+                        // Mix colors based on pattern and music
+                        vec3 color = mix(color1, color2, pattern * 0.5 + 0.5);
+                        color = mix(color, vec3(1.0), iridescence * 0.3 * musicDrive);
+                        
+                        // Add pulsing glow
+                        float glow = 0.5 + 0.5 * sin(time * 4.0 + length(vPosition) * 2.0);
+                        color += vec3(0.2) * glow * musicDrive;
+                        
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+            
+            serpentCore = new THREE.Mesh(serpentGeometry, serpentMaterial);
+            serpentCore.position.set(0, 0, 0);
+            scene.add(serpentCore);
+
+            const barGeometry = new THREE.CylinderGeometry(BAR_THICKNESS / 2, BAR_THICKNESS * 0.8, 1, 8, 1);
+            for (let i = 0; i < NUM_BARS; i++) {
+                const barMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x333333, shininess: 60 });
+                const bar = new THREE.Mesh(barGeometry, barMaterial);
+                const angle = (i / NUM_BARS) * Math.PI * 2;
+                bar.position.x = Math.cos(angle) * BAR_RADIUS; bar.position.z = Math.sin(angle) * BAR_RADIUS; bar.rotation.y = -angle;
+                bars.push(bar); scene.add(bar);
+            }
+
+            const starVertices = [];
+            for (let i = 0; i < 25000; i++) starVertices.push(THREE.MathUtils.randFloatSpread(3500));
+            const starGeom = new THREE.BufferGeometry(); starGeom.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            starField = new THREE.Points(starGeom, new THREE.PointsMaterial({ color: 0xbbbbbb, size: 0.2, fog: false }));
+            scene.add(starField);
+
+            // Initialize AudioContext and persistent AnalyserNode here
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioElement = ui.audioPlayer;
+
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.75;
+            frequencyData = new Uint8Array(analyser.frequencyBinCount);
+            timeDomainData = new Uint8Array(analyser.frequencyBinCount);
+            analyser.connect(audioContext.destination); // Connect analyser to output once
+
+            audioElement.onended = () => {
+                isPlaying = false; ui.playButton.disabled = false; ui.pauseButton.disabled = true; pausedAt = 0;
+                console.log("Audio playback ended.");
+            };
+
+            initCoreParticles(); initSparkParticles(); initRibbonParticles(); initGalaxyParticles(); initWaveParticles(); initShockwaves(); initPostProcessing(); initControls();
+            initVortexTrails(); // New: Initialize Vortex Trails
+            animate();
+
+            // Initialize DNA helices with paths
+            for (let i = 0; i < NUM_HELICES; i++) {
+                const helix = createDNAHelix();
+                const path = createHelixPath();
+                helixPaths.push(path);
+                
+                // Position helix at start of path
+                helix.position.copy(path[0]);
+                scene.add(helix);
+                helices.push(helix);
+                helixMaterials.push(helix.material);
+            }
+        }
+
+        function initControls() {
+            ui.audioFile.addEventListener('change', handleAudioFile);
+            ui.playButton.addEventListener('click', playAudio);
+            ui.pauseButton.addEventListener('click', pauseAudio);
+            ui.feedbackSlider.addEventListener('input', (e) => { if (afterimagePass) afterimagePass.uniforms["damp"].value = parseFloat(e.target.value); ui.feedbackValue.textContent = e.target.value; });
+            ui.kaleidoscopeSides.addEventListener('input', (e) => { if (kaleidoscopePass) kaleidoscopePass.uniforms['sides'].value = parseFloat(e.target.value); ui.kaleidoscopeSidesValue.textContent = e.target.value; });
+            ui.kaleidoscopeAngle.addEventListener('input', (e) => { if (kaleidoscopePass) kaleidoscopePass.uniforms['angle'].value = parseFloat(e.target.value); ui.kaleidoscopeAngleValue.textContent = e.target.value; });
+            ui.filmIntensity.addEventListener('input', (e) => { if (filmPass) filmPass.uniforms.nIntensity.value = parseFloat(e.target.value); ui.filmIntensityValue.textContent = e.target.value; });
+            ui.filmScanlines.addEventListener('input', (e) => { if (filmPass) filmPass.uniforms.sIntensity.value = parseFloat(e.target.value); ui.filmScanlinesValue.textContent = e.target.value; });
+            window.addEventListener('resize', onWindowResize, false);
+            ui.controlsToggle.addEventListener('click', () => {
+                const collapsed = ui.controls.classList.toggle('collapsed');
+                ui.controlsToggleIcon.style.transform = collapsed ? 'rotate(180deg)' : 'rotate(0deg)';
+                ui.controlsToggle.setAttribute('aria-expanded', !collapsed);
+            });
+            ui.fractalOverlayToggle.addEventListener('change', () => {
+                if (fractalPalettePass) fractalPalettePass.enabled = ui.fractalOverlayToggle.checked;
+            });
+            ui.patchworkToggle.addEventListener('change', () => {
+                if (patchworkPass) patchworkPass.enabled = ui.patchworkToggle.checked;
+            });
+        }
+
+        function initPostProcessing() {
+            composer = new THREE.EffectComposer(renderer);
+            const renderPass = new THREE.RenderPass(scene, camera); composer.addPass(renderPass);
+            kaleidoscopePass = new THREE.ShaderPass(KaleidoscopeShader); 
+            kaleidoscopePass.uniforms['sides'].value = parseFloat(ui.kaleidoscopeSides.value); 
+            kaleidoscopePass.uniforms['angle'].value = parseFloat(ui.kaleidoscopeAngle.value); 
+            composer.addPass(kaleidoscopePass);
+            filmPass = new THREE.FilmPass(parseFloat(ui.filmIntensity.value), parseFloat(ui.filmScanlines.value), 648, false); 
+            composer.addPass(filmPass);
+            chromaPsyPass = new THREE.ShaderPass(ChromaticPsyShader);
+            composer.addPass(chromaPsyPass);
+            fractalPalettePass = new THREE.ShaderPass(FractalPaletteShader);
+            fractalPalettePass.enabled = ui.fractalOverlayToggle.checked;
+            composer.addPass(fractalPalettePass);
+            patchworkPass = new THREE.ShaderPass(PatchworkShader);
+            patchworkPass.enabled = ui.patchworkToggle.checked;
+            composer.addPass(patchworkPass);
+        }
+
+        function createParticleSystem(maxParticles, shader) {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(maxParticles * 3).fill(0); const alphas = new Float32Array(maxParticles).fill(0);
+            const sizes = new Float32Array(maxParticles).fill(0.1); const colors = new Float32Array(maxParticles * 3).fill(1);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3)); geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1)); geometry.setAttribute('customColor', new THREE.BufferAttribute(colors, 3));
+            const material = new THREE.ShaderMaterial(shader); const system = new THREE.Points(geometry, material); scene.add(system);
+            return { system, geometry, positions, alphas, sizes, colors, velocities: Array(maxParticles).fill(null).map(() => new THREE.Vector3()), ages: new Float32Array(maxParticles).fill(Infinity), lifetimes: new Float32Array(maxParticles).fill(1) };
+        }
+        function initCoreParticles() { const ps = createParticleSystem(MAX_CORE_PARTICLES, ParticleShader); coreParticleSystem = ps.system; coreParticleGeometry = ps.geometry; coreParticlePositions = ps.positions; coreParticleAlphas = ps.alphas; coreParticleSizes = ps.sizes; coreParticleVelocities = ps.velocities; coreParticleAges = ps.ages; coreParticleLifetimes = ps.lifetimes; coreParticleColors = ps.colors; }
+        function initSparkParticles() { const ps = createParticleSystem(MAX_SPARK_PARTICLES, ParticleShader); sparkParticleSystem = ps.system; sparkParticleGeometry = ps.geometry; sparkParticlePositions = ps.positions; sparkParticleAlphas = ps.alphas; sparkParticleSizes = ps.sizes; sparkParticleVelocities = ps.velocities; sparkParticleAges = ps.ages; sparkParticleLifetimes = ps.lifetimes; sparkParticleColors = ps.colors; }
+        function initRibbonParticles() {
+            const geometry = new THREE.BufferGeometry();
+            ribbonParticlePositions = new Float32Array(MAX_RIBBON_PARTICLES * 3);
+            ribbonParticleColors = new Float32Array(MAX_RIBBON_PARTICLES * 3);
+            ribbonParticleAlphas = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleSizes = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleAngles = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleRadii = new Float32Array(MAX_RIBBON_PARTICLES);
+            ribbonParticleSpeeds = new Float32Array(MAX_RIBBON_PARTICLES);
+            for (let i = 0; i < MAX_RIBBON_PARTICLES; i++) {
+                ribbonParticleAngles[i] = Math.random() * Math.PI * 2;
+                ribbonParticleRadii[i] = 8 + Math.random() * 18;
+                ribbonParticleSpeeds[i] = 0.2 + Math.random() * 0.7;
+                ribbonParticleAlphas[i] = 0.7 + Math.random() * 0.3;
+                ribbonParticleSizes[i] = 0.18 + Math.random() * 0.22;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(ribbonParticlePositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(ribbonParticleColors, 3));
+            geometry.setAttribute('alpha', new THREE.BufferAttribute(ribbonParticleAlphas, 1));
+            geometry.setAttribute('size', new THREE.BufferAttribute(ribbonParticleSizes, 1));
+            const material = new THREE.ShaderMaterial({
+                uniforms: ParticleShader.uniforms,
+                vertexShader: ParticleShader.vertexShader,
+                fragmentShader: ParticleShader.fragmentShader,
+                blending: THREE.AdditiveBlending,
+                depthTest: false,
+                transparent: true
+            });
+            ribbonParticleSystem = new THREE.Points(geometry, material);
+            scene.add(ribbonParticleSystem);
+            ribbonParticleGeometry = geometry;
+        }
+
+        function initShockwaves() {
+            const shockwaveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            for (let i = 0; i < MAX_SHOCKWAVES; i++) {
+                const shockwaveGeometry = new THREE.RingGeometry(0.1, 0.3, 64, 1, 0, Math.PI * 2);
+                const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial.clone());
+                shockwave.visible = false; shockwave.rotation.x = Math.PI / 2; scene.add(shockwave); shockwavePool.push(shockwave);
+            }
+        }
+
+        function handleAudioFile(event) {
+            console.log('[DEBUG] handleAudioFile called', event);
+            if (isPlaying) { audioElement.pause(); }
+            if (mediaElementSource) { mediaElementSource.disconnect(); mediaElementSource = null; }
+            if (audioElement.src && audioElement.src.startsWith('blob:')) { URL.revokeObjectURL(audioElement.src); }
+            audioElement.removeAttribute('src'); audioElement.load();
+
+            isPlaying = false; audioLoaded = false; pausedAt = 0;
+            ui.playButton.disabled = true; ui.pauseButton.disabled = true;
+            ui.loading.style.display = 'block'; ui.fileName.textContent = "Processing...";
+            ui.progressContainer.style.display = 'none';
+            ui.progressBar.style.width = '0%';
+            ui.progressPercent.textContent = '0%';
+
+            const file = event.target.files[0];
+            console.log('[DEBUG] File selected:', file);
+            if (file) {
+                ui.fileName.textContent = `Loading: ${file.name} (Quick Start)...`;
+                ui.progressContainer.style.display = 'block';
+                console.log('[DEBUG] progressContainer set to block');
+                ui.loading.style.display = 'none';
+                const reader = new FileReader();
+                reader.onprogress = (e) => {
+                    console.log('[DEBUG] FileReader onprogress', e);
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        ui.progressBar.style.width = percent + '%';
+                        ui.progressPercent.textContent = percent + '%';
+                    }
+                };
+                reader.onerror = (e) => {
+                    console.log('[DEBUG] FileReader onerror', e);
+                    ui.progressContainer.style.display = 'none';
+                    ui.fileName.textContent = 'Error reading file.';
+                    alert('Error reading audio file.');
+                };
+                reader.onload = (e) => {
+                    console.log('[DEBUG] FileReader onload', e);
+                    const blob = new Blob([e.target.result], { type: file.type });
+                    const objectURL = URL.createObjectURL(blob);
+                    audioElement.src = objectURL; audioElement.load();
+                    ui.progressBar.style.width = '100%';
+                    ui.progressPercent.textContent = '100%';
+                    ui.fileName.textContent = `Decoding: ${file.name}`;
+                    let onCanPlay, onErrorHandler, setupAudioChainHandler, cleanupListenersHandler;
+                    setupAudioChainHandler = () => {
+                        console.log('[DEBUG] setupAudioChainHandler called');
+                        try {
+                            mediaElementSource = audioContext.createMediaElementSource(audioElement);
+                            mediaElementSource.connect(analyser);
+                        } catch (e) {
+                            console.log('[DEBUG] Error in setupAudioChainHandler', e);
+                            console.error("Error creating or connecting MediaElementSource:", e);
+                            ui.progressContainer.style.display = 'none';
+                            ui.fileName.textContent = "Error with audio source setup.";
+                            alert("Could not set up audio processing. Please try refreshing the page."); return;
+                        }
+                        audioLoaded = true; ui.playButton.disabled = false; ui.pauseButton.disabled = true;
+                        ui.progressContainer.style.display = 'none';
+                        ui.fileName.textContent = `Ready: ${file.name}`;
+                        console.log("Audio ready for streaming playback and analysis.");
+                    };
+                    onCanPlay = () => {
+                        console.log('[DEBUG] audioElement canplay event');
+                        cleanupListenersHandler();
+                        if (audioContext.state === 'suspended') { audioContext.resume().then(setupAudioChainHandler); }
+                        else { setupAudioChainHandler(); }
+                    };
+                    onErrorHandler = (e) => {
+                        console.log('[DEBUG] audioElement error event', e);
+                        cleanupListenersHandler();
+                        ui.progressContainer.style.display = 'none';
+                        ui.fileName.textContent = "Error loading audio.";
+                        alert(`Error loading audio file: ${audioElement.error ? audioElement.error.message : 'Unknown error'}. It might be corrupted or an unsupported format.`);
+                    };
+                    cleanupListenersHandler = () => {
+                        audioElement.removeEventListener('canplay', onCanPlay);
+                        audioElement.removeEventListener('error', onErrorHandler);
+                    };
+                    audioElement.addEventListener('canplay', onCanPlay);
+                    audioElement.addEventListener('error', onErrorHandler);
+                };
+                console.log('[DEBUG] Calling reader.readAsArrayBuffer');
+                reader.readAsArrayBuffer(file);
+            } else {
+                ui.loading.style.display = 'none'; ui.fileName.textContent = "No file selected.";
+                ui.progressContainer.style.display = 'none';
+            }
+        }
+
+        function playAudio() {
+            if (!audioLoaded || isPlaying) return;
+            const playAction = () => {
+                if (pausedAt > 0 && Math.abs(audioElement.currentTime - pausedAt) > 0.1) { audioElement.currentTime = pausedAt; }
+                audioElement.play().then(() => {
+                    isPlaying = true; ui.playButton.disabled = true; ui.pauseButton.disabled = false;
+                }).catch(e => { console.error("Error playing audio:", e); ui.playButton.disabled = false; });
+            };
+            if (audioContext.state === 'suspended') { audioContext.resume().then(playAction); } else { playAction(); }
+        }
+
+        function pauseAudio() {
+            if (!isPlaying || !audioLoaded) return;
+            audioElement.pause(); pausedAt = audioElement.currentTime;
+            isPlaying = false; ui.playButton.disabled = false; ui.pauseButton.disabled = true;
+        }
+
+        function updateParticles(ps, deltaTime, origin, numToSpawn, baseColor, energyScalar, isBurst = false) {
+            const { geometry, positions, alphas, sizes, velocities, ages, lifetimes, colors } = ps;
+            let spawnedThisFrame = 0;
+            const maxSpawn = isBurst ? numToSpawn : Math.ceil(numToSpawn * deltaTime * 10);
+
+            for (let i = 0; i < positions.length / 3; i++) {
+                ages[i] += deltaTime;
+                if (ages[i] > lifetimes[i]) {
+                    if (spawnedThisFrame < maxSpawn) {
+                        ages[i] = 0; lifetimes[i] = (0.5 + Math.random() * 1.5) * (1 + energyScalar * 0.5);
+                        if (origin instanceof THREE.Vector3) {
+                            positions[i * 3] = origin.x; positions[i * 3 + 1] = origin.y; positions[i * 3 + 2] = origin.z;
+                        } else {
+                            const rScale = centralCore.geometry.parameters.radius * centralCore.scale.x * (0.8 + Math.random()*0.4) ;
+                            const theta = Math.random() * Math.PI * 2; const phi = Math.acos(Math.random() * 2 - 1);
+                            positions[i * 3] = rScale * Math.sin(phi) * Math.cos(theta) + centralCore.position.x;
+                            positions[i * 3 + 1] = rScale * Math.sin(phi) * Math.sin(theta) + centralCore.position.y;
+                            positions[i * 3 + 2] = rScale * Math.cos(phi) + centralCore.position.z;
+                        }
+                        velocities[i].set( (Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5) )
+                            .normalize().multiplyScalar((5 + Math.random() * 10) * (1 + energyScalar * 3.0)); // Further increased velocity sensitivity
+                        alphas[i] = 0.7 + Math.random() * 0.3; sizes[i] = (0.05 + Math.random() * 0.5 + energyScalar * 1.0) * 2.0; // Further increased size sensitivity
+                        const hcl = new THREE.Color(); baseColor.getHSL(hcl);
+                        const particleHue = (hcl.h + (Math.random() - 0.5) * 0.3 + energyScalar * 0.2) % 1;
+                        const tempColor = new THREE.Color().setHSL(particleHue, 0.8 + Math.random()*0.2, 0.5 + Math.random()*0.3);
+                        colors[i*3] = tempColor.r; colors[i*3+1] = tempColor.g; colors[i*3+2] = tempColor.b;
+                        spawnedThisFrame++;
+                    } else { alphas[i] = 0; }
+                }
+                if (alphas[i] > 0) {
+                    positions[i * 3] += velocities[i].x * deltaTime;
+                    positions[i * 3 + 1] += velocities[i].y * deltaTime;
+                    positions[i * 3 + 2] += velocities[i].z * deltaTime;
+                    // SAFETY CHECK
+                    if (!isFinite(positions[i*3])) positions[i*3] = 0;
+                    if (!isFinite(positions[i*3+1])) positions[i*3+1] = 0;
+                    if (!isFinite(positions[i*3+2])) positions[i*3+2] = 0;
+                    alphas[i] -= (0.8 / Math.max(0.1, lifetimes[i])) * deltaTime; alphas[i] = Math.max(0, alphas[i]);
+                }
+            }
+            if (spawnedThisFrame > 0 || geometry.attributes.alpha.array.some(a => a > 0)) {
+                scrubNaNPositions(positions);
+                geometry.attributes.position.needsUpdate = true; geometry.attributes.alpha.needsUpdate = true;
+                geometry.attributes.size.needsUpdate = true; geometry.attributes.customColor.needsUpdate = true;
+            }
+            return spawnedThisFrame;
+        }
+
+        function spawnShockwave(energy) {
+            if (!ui.shockwaveToggle.checked || shockwaveSpawnTimer > 0) return;
+            const shockwave = shockwavePool.find(sw => !sw.visible);
+            if (shockwave) {
+                shockwave.visible = true; shockwave.scale.set(1, 1, 1); shockwave.material.opacity = 0.6 + energy * 0.5; // Even more increased opacity sensitivity
+                shockwave.userData.life = 0; shockwave.userData.maxLife = 0.4 + energy * 0.8; shockwave.userData.speed = 40 + energy * 90; // Even more increased speed sensitivity and shorter maxLife
+                const hue = (Date.now() * 0.0001 + energy * 0.3) % 1;
+                shockwave.material.color.setHSL(hue, 1.0, 0.6 + energy * 0.2);
+                shockwaves.push(shockwave); shockwaveSpawnTimer = SHOCKWAVE_COOLDOWN;
+            }
+        }
+
+        function updateShockwaves(deltaTime, musicDrive) {
+            shockwaveSpawnTimer = Math.max(0, shockwaveSpawnTimer - deltaTime);
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const sw = shockwaves[i]; sw.userData.life += deltaTime; const progress = sw.userData.life / sw.userData.maxLife;
+                if (progress >= 1) { sw.visible = false; shockwaves.splice(i, 1); }
+                else { const currentRadius = progress * sw.userData.speed; sw.scale.set(currentRadius, currentRadius, currentRadius); sw.material.opacity = (0.3 + peakLevel * 0.7) * (1 - progress * progress) * musicDrive; } // MusicDrive influence for opacity
+            }
+        }
+
+        function spawnBarSparks(bar, freqValue, musicDrive) {
+            if (!ui.barSparksToggle.checked || freqValue < 0.7) return;
+            const numSparks = Math.floor(freqValue * 8 * peakLevel * 3 * musicDrive); if (numSparks === 0) return; // Increased musicDrive and peakLevel influence
+            const barTipPosition = new THREE.Vector3( bar.position.x, bar.position.y + bar.scale.y / 2 + 0.5, bar.position.z );
+            for (let k=0; k < numSparks; k++) {
+                 const i = currentSparkParticleIndex % MAX_SPARK_PARTICLES; currentSparkParticleIndex++;
+                sparkParticleAges[i] = 0; sparkParticleLifetimes[i] = 0.1 + Math.random() * 0.4 + freqValue * 0.3 * musicDrive; // Increased musicDrive influence
+                sparkParticlePositions[i * 3] = barTipPosition.x + (Math.random() - 0.5) * 0.2; sparkParticlePositions[i * 3 + 1] = barTipPosition.y + (Math.random() - 0.5) * 0.2; sparkParticlePositions[i * 3 + 2] = barTipPosition.z + (Math.random() - 0.5) * 0.2;
+                sparkParticleVelocities[i].set( (Math.random() - 0.5), 0.5 + Math.random() * 0.5, (Math.random() - 0.5) ).normalize().multiplyScalar((2 + Math.random() * 8) * (1 + freqValue * 1.5) * musicDrive); // Increased musicDrive and freqValue influence
+                // SAFETY CHECK: Ensure velocities are finite
+                if (!isFinite(sparkParticleVelocities[i].x)) sparkParticleVelocities[i].x = 0;
+                if (!isFinite(sparkParticleVelocities[i].y)) sparkParticleVelocities[i].y = 0;
+                if (!isFinite(sparkParticleVelocities[i].z)) sparkParticleVelocities[i].z = 0;
+
+                sparkParticleAlphas[i] = (0.4 + Math.random() * 0.6) * musicDrive; sparkParticleSizes[i] = (0.02 + Math.random() * 0.15 + freqValue * 0.15) * 2.0 * musicDrive; // Increased musicDrive influence and lower base
+                const hcl = new THREE.Color(); bar.material.color.getHSL(hcl); const sparkHue = (hcl.h + (Math.random() - 0.5) * 0.1) % 1;
+                const tempColor = new THREE.Color().setHSL(sparkHue, 1.0, 0.7 + Math.random()*0.3);
+                sparkParticleColors[i*3] = tempColor.r; sparkParticleColors[i*3+1] = tempColor.g; sparkParticleColors[i*3+2] = tempColor.b;
+            }
+        }
+
+        const clock = new THREE.Clock();
+        let averageAmplitude = 0;
+        const SMOOTHING_FACTOR = 0.05;
+
+        function triggerCameraSpin(type = 'wild') {
+            cameraSpinState.spinning = true;
+            cameraSpinState.t = 0;
+            cameraSpinState.duration = type === 'wild' ? (0.8 + Math.random()*0.7) : (0.4 + Math.random()*0.3);
+            cameraSpinState.startTime = clock.getElapsedTime();
+            cameraSpinState.type = type;
+        }
+
+        function updateRibbonParticles(time, bassEnergy, midEnergy, highEnergy, overallAmplitude, peakLevel, musicDrive) {
+            for (let i = 0; i < MAX_RIBBON_PARTICLES; i++) {
+                // Spiral/orbit motion
+                let baseRadius = ribbonParticleRadii[i] * (0.8 + 0.4 * Math.sin(time * 0.7 + i * 0.01 + bassEnergy * 4.0 * musicDrive)); // Increased musicDrive influence and lower base
+                let angle = ribbonParticleAngles[i] + time * ribbonParticleSpeeds[i] * (0.5 + 2.0 * (0.3 + midEnergy * 2.0 * musicDrive)); // Increased mid-energy and musicDrive sensitivity
+                let y = Math.sin(angle * 2 + time * 0.5 + i * 0.01) * (2 + 4 * Math.sin(time * 0.3 + i * 0.02 + highEnergy * 4.0 * musicDrive)); // Increased high-energy and musicDrive sensitivity
+                let x = Math.cos(angle) * baseRadius;
+                let z = Math.sin(angle) * baseRadius;
+                // Trippy undulation
+                x += Math.sin(time * 1.5 + i * 0.03) * 1.5 * (0.2 + highEnergy * 2.0 * musicDrive); // Increased high-energy undulation and musicDrive
+                z += Math.cos(time * 1.2 + i * 0.04) * 1.5 * (0.2 + bassEnergy * 2.0 * musicDrive); // Increased bass-energy undulation and musicDrive
+                y += Math.sin(time * 2.2 + i * 0.05) * 1.0 * (0.2 + midEnergy * 2.0 * musicDrive); // Increased mid-energy undulation and musicDrive
+                // SAFETY CHECK
+                if (!isFinite(x) || !isFinite(y) || !isFinite(z)) { x = y = z = 0; }
+                ribbonParticlePositions[i*3] = x;
+                ribbonParticlePositions[i*3+1] = y;
+                ribbonParticlePositions[i*3+2] = z;
+                // Color cycling
+                const hue = ((angle / Math.PI * 0.5) + time * 0.08 + i * 0.001 + peakLevel * 0.4 * musicDrive) % 1; // Increased peak level color sensitivity and musicDrive
+                const color = new THREE.Color().setHSL(hue, 0.85 + 0.15 * musicDrive, 0.45 + 0.35 * Math.sin(time + i * 0.01) * musicDrive); // Increased saturation/lightness sensitivity to musicDrive
+                ribbonParticleColors[i*3] = color.r;
+                ribbonParticleColors[i*3+1] = color.g;
+                ribbonParticleColors[i*3+2] = color.b;
+                // Alpha and size pulse
+                ribbonParticleAlphas[i] = (0.3 + 0.7 * Math.abs(Math.sin(time * 1.2 + i * 0.02 + overallAmplitude * 3.0))) * musicDrive; // Increased overall amplitude and musicDrive sensitivity
+                ribbonParticleSizes[i] = (0.1 + 0.3 * Math.abs(Math.sin(time * 1.5 + i * 0.03 + peakLevel * 3.0))) * musicDrive; // Increased peak level and musicDrive size sensitivity
+            }
+            scrubNaNPositions(ribbonParticlePositions);
+            ribbonParticleGeometry.attributes.position.needsUpdate = true;
+            ribbonParticleGeometry.attributes.customColor.needsUpdate = true;
+            ribbonParticleGeometry.attributes.alpha.needsUpdate = true;
+            ribbonParticleGeometry.attributes.size.needsUpdate = true;
+        }
+
+        let snareTrigger = 0;
+        let snareCooldown = 0;
+        let bassDrumTrigger = 0; // New: For bass drum hit animation
+        let bassDrumCooldown = 0; // New: Cooldown for bass drum trigger
+
+        function detectTempo(time) {
+            // Get the bass frequencies (typically 20-200 Hz)
+            const bassStart = 0;
+            const bassEnd = 10; // Adjust based on your FFT size
+            let bassEnergy = 0;
+            for (let i = bassStart; i < bassEnd; i++) {
+                bassEnergy += frequencyData[i];
+            }
+            bassEnergy /= (bassEnd - bassStart);
+
+            // Simple beat detection
+            if (bassEnergy > 150 && (time - lastBeatTime) > MIN_BEAT_INTERVAL) {
+                const currentInterval = time - lastBeatTime;
+                
+                // Only consider intervals within reasonable tempo range
+                if (currentInterval < MAX_BEAT_INTERVAL) {
+                    beatInterval = currentInterval;
+                    lastBeatTime = time;
+                    beatCount++;
+                    
+                    // Calculate tempo in BPM
+                    const detectedTempo = 60 / beatInterval;
+                    
+                    // Add to history
+                    tempoHistory.push(detectedTempo);
+                    if (tempoHistory.length > TEMPO_HISTORY_LENGTH) {
+                        tempoHistory.shift();
+                    }
+                    
+                    // Calculate average tempo
+                    currentTempo = tempoHistory.reduce((a, b) => a + b, 0) / tempoHistory.length;
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = Math.min(clock.getDelta(), 0.1);
+            const time = clock.getElapsedTime();
+            
+            // Update audio analysis
+            if (analyser && isPlaying) {
+                analyser.getByteFrequencyData(frequencyData);
+                analyser.getByteTimeDomainData(timeDomainData);
+                
+                // Detect tempo
+                detectTempo(time);
+                
+                // Calculate peak level
+                let sum = 0;
+                for (let i = 0; i < frequencyData.length; i++) {
+                    sum += frequencyData[i];
+                }
+                peakLevel = sum / frequencyData.length / 255;
+                peakLevel = Math.max(peakLevel, peakLevel * PEAK_DECAY_RATE);
+            }
+
+            // Update fractal palette with tempo-based timing
+            if (fractalPalettePass) {
+                fractalPalettePass.uniforms['iTime'].value = time;
+                fractalPalettePass.uniforms['iResolution'].value.set(window.innerWidth, window.innerHeight);
+                fractalPalettePass.uniforms['musicDrive'].value = peakLevel;
+                // Use tempo to influence the fractal animation
+                const tempoFactor = currentTempo / 120; // Normalize to 120 BPM
+                fractalPalettePass.uniforms['opacity'].value = (0.3 + 0.6 * Math.abs(Math.sin(time * tempoFactor * 0.2 + peakLevel * 3.0))) * peakLevel;
+            }
+
+            // Update serpent core to follow camera orbit
+            if (serpentCore) {
+                serpentCore.material.uniforms.time.value = time;
+                serpentCore.material.uniforms.musicDrive.value = peakLevel;
+                
+                // Make the serpent core follow the camera's orbit
+                const orbitRadius = 20;
+                const orbitSpeed = 0.1;
+                const orbitHeight = 5;
+                
+                // Calculate position based on camera's orbit
+                const orbitAngle = time * orbitSpeed;
+                serpentCore.position.x = Math.cos(orbitAngle) * orbitRadius;
+                serpentCore.position.z = Math.sin(orbitAngle) * orbitRadius;
+                serpentCore.position.y = Math.sin(time * 0.5) * orbitHeight;
+                
+                // Make the serpent face the camera
+                serpentCore.lookAt(camera.position);
+                
+                // Add some rotation for more dynamic movement
+                serpentCore.rotation.x = time * 0.2;
+                serpentCore.rotation.y = time * 0.3;
+                serpentCore.rotation.z = time * 0.1;
+                
+                // Dynamic scale based on audio
+                const scale = 1.0 + peakLevel * 0.3;
+                serpentCore.scale.set(scale, scale, scale);
+            }
+
+            let overallAmplitude = 0, bassEnergy = 0, midEnergy = 0, highEnergy = 0;
+            let musicDrive = 0;
+            if (isPlaying && analyser && frequencyData) {
+                analyser.getByteFrequencyData(frequencyData); analyser.getByteTimeDomainData(timeDomainData);
+                let sum = 0; for (let val of timeDomainData) sum += Math.abs(val - 128);
+                overallAmplitude = Math.min( (sum / timeDomainData.length) / 70, 1);
+                averageAmplitude = averageAmplitude * (1 - SMOOTHING_FACTOR * 0.5) + overallAmplitude * (SMOOTHING_FACTOR * 0.5); // Slower moving average
+                peakLevel = Math.max(peakLevel * PEAK_DECAY_RATE * 0.9, (overallAmplitude - averageAmplitude * PEAK_SENSITIVITY * 1.2) * 2.0 ); // Increased sensitivity to deviations, faster decay for peaks
+                peakLevel = Math.max(0, Math.min(peakLevel, 1.2));
+                const bins = frequencyData.length;
+                for (let i = 0; i < bins; i++) {
+                    if (i < bins * 0.1) bassEnergy += frequencyData[i];
+                    else if (i < bins * 0.4) midEnergy += frequencyData[i];
+                    else highEnergy += frequencyData[i];
+                }
+                bassEnergy = Math.min((bassEnergy / (bins * 0.1 * 255)), 1) * 1.2;
+                midEnergy = Math.min((midEnergy / (bins * 0.4 * 255)), 1);
+                highEnergy = Math.min((highEnergy / (bins * 0.5 * 255)), 1);
+                musicDrive = Math.pow(Math.max(0, (peakLevel * 0.8 + overallAmplitude * 0.4)), 2.0); // Even more aggressive musicDrive
+
+                if (peakLevel > 0.7 && Math.random() > 0.7) flashIntensity = peakLevel * 0.8;
+                if (peakLevel > 0.6) coreParticlesToSpawn = Math.floor(peakLevel * 50 + bassEnergy * 30);
+                let spawnedCore = updateParticles( { geometry: coreParticleGeometry, positions: coreParticlePositions, alphas: coreParticleAlphas, sizes: coreParticleSizes, velocities: coreParticleVelocities, ages: coreParticleAges, lifetimes: coreParticleLifetimes, colors: coreParticleColors }, deltaTime, centralCore.position, coreParticlesToSpawn, centralCore.material.color, overallAmplitude + bassEnergy, true );
+                coreParticlesToSpawn = Math.max(0, coreParticlesToSpawn - spawnedCore);
+                if (bassEnergy > 0.6 || peakLevel > 0.5) spawnShockwave(bassEnergy + peakLevel * 0.5);
+                // New: Bass drum hit detection
+                const BASS_THRESHOLD = 0.7; // Threshold for bass hit detection
+                const BASS_COOLDOWN = 0.1; // Cooldown time in seconds
+                if (bassEnergy > BASS_THRESHOLD && bassDrumCooldown <= 0) {
+                    bassDrumTrigger = 1; // Trigger the animation
+                    bassDrumCooldown = BASS_COOLDOWN; // Start cooldown
+                } else {
+                    bassDrumTrigger = Math.max(0, bassDrumTrigger - deltaTime * 5); // Decay the trigger
+                    bassDrumCooldown = Math.max(0, bassDrumCooldown - deltaTime); // Decrease cooldown
+                }
+
+                // --- Core morphing logic ---
+                // Switch morph target every ~8-12 seconds or on strong peak
+                if (time - coreMorphState.lastSwitch > 8 + Math.random()*4 || peakLevel > 1.0) {
+                    const morphs = ['sphere','torus','knot'];
+                    let next;
+                    do { next = morphs[Math.floor(Math.random()*morphs.length)]; } while (next === coreMorphState.to);
+                    coreMorphState.from = coreMorphState.to;
+                    coreMorphState.to = next;
+                    coreMorphState.t = 0;
+                    coreMorphState.lastSwitch = time;
+                }
+                // Morph progress
+                coreMorphState.t = Math.min(1, coreMorphState.t + deltaTime * (0.15 + overallAmplitude * 3.0 * musicDrive)); // Significantly increased sensitivity and musicDrive influence
+                // Morph between from/to
+                const geomA = coreMorphTargets[coreMorphState.from];
+                const geomB = coreMorphTargets[coreMorphState.to];
+                const morphed = morphGeometries(geomA, geomB, coreMorphState.t);
+                // Vertex displacement for trippy effect
+                const posAttr = centralCore.geometry.attributes.position;
+                for (let i = 0; i < morphed.length; i += 3) {
+                    let x = morphed[i], y = morphed[i+1], z = morphed[i+2];
+                    const r = Math.sqrt(x*x + y*y + z*z);
+                    const theta = Math.atan2(y, x);
+                    const phi = Math.acos(z / (r+0.0001));
+                    const disp = 0.7 + Math.sin(time*2 + theta*3 + phi*5) * (0.5 + bassEnergy*2.5 * musicDrive) + Math.cos(time*3 + phi*7) * (0.3 + highEnergy*2.0 * musicDrive); // Stronger MusicDrive influence
+                    // SAFETY CHECK
+                    if (!isFinite(x) || !isFinite(y) || !isFinite(z) || !isFinite(disp)) { x = y = z = 0; }
+                    posAttr.array[i] = x * disp;
+                    posAttr.array[i+1] = y * disp;
+                    posAttr.array[i+2] = z * disp;
+                }
+                scrubNaNPositions(posAttr.array);
+                warnIfNaNPositions(posAttr.array, 'centralCore');
+                posAttr.needsUpdate = true;
+                const coreScaleFactor = 0.8 + overallAmplitude * 2.5 * musicDrive + bassEnergy * 2.0 * musicDrive + peakLevel * 1.5 * musicDrive; // Increased musicDrive influence and lower base
+                centralCore.scale.setScalar(coreScaleFactor);
+                centralCore.material.emissiveIntensity = (0.2 + midEnergy * 1.0 + peakLevel * 0.7) * musicDrive; // Increased musicDrive influence and lower base
+                centralCore.rotation.x += (0.01 + overallAmplitude * 0.2 * musicDrive + bassEnergy * 0.1 * musicDrive + peakLevel * 0.2 * musicDrive) * deltaTime * 30; // Increased musicDrive influence
+                centralCore.rotation.y += (0.015 + overallAmplitude * 0.25 * musicDrive + midEnergy * 0.15 * musicDrive + peakLevel * 0.25 * musicDrive) * deltaTime * 30; // Increased musicDrive influence
+                centralCore.rotation.z += (highEnergy * 0.15 * musicDrive + peakLevel * 0.15 * musicDrive) * deltaTime * 30; // Increased musicDrive influence
+                const coreHue = (time * 0.02 + bassEnergy * 0.2 * musicDrive + peakLevel * 0.15 * musicDrive) % 1; // MusicDrive influence
+                centralCore.material.color.setHSL(coreHue, 0.85 + midEnergy * 0.15 * musicDrive, 0.35 + midEnergy * 0.3 * musicDrive + peakLevel * 0.25 * musicDrive); // Enhanced color sensitivity and musicDrive influence
+                centralCore.material.emissive.setHSL(coreHue, 0.75 + midEnergy * 0.2 * musicDrive, 0.15 + midEnergy * 0.3 * musicDrive);
+
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const bar = bars[i];
+                    const freqIndex = Math.floor(i * (analyser.frequencyBinCount / NUM_BARS));
+                    const freqValue = frequencyData[freqIndex] / 255;
+                    const angle = (i / NUM_BARS) * Math.PI * 2; // Re-calculate angle for this bar
+                    // --- Trippy bar bending, twisting, and rippling ---
+                    const ripple = Math.sin(time * 2.2 + i * 0.18 + peakLevel * 3.0 * musicDrive) * 0.5 * musicDrive + Math.cos(time * 1.7 + i * 0.13 + bassEnergy * 3.0 * musicDrive) * 0.5 * musicDrive; // Stronger MusicDrive influence
+                    const twist = Math.sin(time * 1.3 + i * 0.11 + midEnergy * 3.0 * musicDrive) * 0.7 * musicDrive; // Stronger MusicDrive influence
+                    const bend = Math.cos(time * 1.5 + i * 0.15 + highEnergy * 3.0 * musicDrive) * 0.7 * musicDrive; // Stronger MusicDrive influence
+
+                    // New: Spontaneous Jitter/Distortion for bars
+                    const jitterAmount = 0.05 + 0.15 * musicDrive + 0.1 * snareTrigger; // Base jitter, amplified by musicDrive and snare
+                    const jitterX = (Math.random() - 0.5) * jitterAmount * 2.0; 
+                    const jitterZ = (Math.random() - 0.5) * jitterAmount * 2.0;
+                    const jitterRotX = (Math.random() - 0.5) * jitterAmount * Math.PI * 0.5; 
+                    const jitterRotZ = (Math.random() - 0.5) * jitterAmount * Math.PI * 0.5;
+
+                    // SAFETY CHECK
+                    if (!isFinite(ripple) || !isFinite(twist) || !isFinite(bend) || !isFinite(jitterX) || !isFinite(jitterZ) || !isFinite(jitterRotX) || !isFinite(jitterRotZ)) {
+                        ripple = twist = bend = jitterX = jitterZ = jitterRotX = jitterRotZ = 0;
+                    }
+
+                    bar.scale.y = Math.max(0.01, 0.05 + freqValue * MAX_BAR_HEIGHT * (1 + peakLevel * 1.2 * musicDrive + bassEnergy * 0.7 * musicDrive) + Math.abs(ripple) * 1.2 * musicDrive);
+                    bar.position.y = bar.scale.y / 2 + bend * 1.2 * musicDrive;
+                    bar.position.x = Math.cos(angle) * BAR_RADIUS + jitterX; // Apply jitter to X
+                    bar.position.z = Math.sin(angle) * BAR_RADIUS + jitterZ; // Apply jitter to Z
+                    bar.rotation.x = (freqValue * Math.PI * 0.4 * musicDrive + peakLevel * 0.8 * musicDrive + bassEnergy * freqValue * 0.5 * musicDrive) * (i % 2 === 0 ? 1 : -1) + twist * 0.8 * musicDrive + jitterRotX;
+                    bar.rotation.z = bend * 0.5 * musicDrive + ripple * 0.4 * musicDrive + jitterRotZ;
+                    // --- Glow effect ---
+                    bar.material.emissiveIntensity = (0.2 + freqValue * 1.8 + peakLevel * 1.2) * musicDrive; // Increased musicDrive influence and lower base
+                    // --- Color cycling ---
+                    const hue = (i / NUM_BARS + time * 0.05 + freqValue * 0.2 * musicDrive + peakLevel * 0.15 * musicDrive) % 1;
+                    const saturation = 0.6 + freqValue * 0.4 * musicDrive + peakLevel * 0.4 * musicDrive; // Enhanced saturation sensitivity and musicDrive influence
+                    const lightness = 0.2 + freqValue * 0.6 * musicDrive + peakLevel * 0.3 * musicDrive; // Enhanced lightness sensitivity and musicDrive influence
+                    bar.material.color.setHSL(hue, saturation, lightness);
+                    bar.material.emissive.setHSL(hue, saturation, lightness * 0.45);
+                    spawnBarSparks(bar, freqValue, musicDrive);
+                }
+                 updateParticles( { geometry: sparkParticleGeometry, positions: sparkParticlePositions, alphas: sparkParticleAlphas, sizes: sparkParticleSizes, velocities: sparkParticleVelocities, ages: sparkParticleAges, lifetimes: sparkParticleLifetimes, colors: sparkParticleColors }, deltaTime, null, 0, null, 0 );
+
+                // --- Camera wild spin/zoom trigger ---
+                if (!cameraSpinState.spinning && (peakLevel > 1.05 && Math.random() > 0.7)) {
+                    triggerCameraSpin('wild');
+                }
+
+                // Snare detection (use mid-high frequencies)
+                let snareEnergy = 0;
+                for (let i = Math.floor(frequencyData.length * 0.2); i < Math.floor(frequencyData.length * 0.5); i++) {
+                    snareEnergy += frequencyData[i];
+                }
+                snareEnergy /= (frequencyData.length * 0.3 * 255);
+                if (snareEnergy > 0.7 && snareCooldown <= 0) {
+                    snareTrigger = 1;
+                    snareCooldown = 0.15; // 150ms lockout
+                } else {
+                    snareTrigger = Math.max(0, snareTrigger - deltaTime * 5);
+                    snareCooldown = Math.max(0, snareCooldown - deltaTime);
+                }
+                // Kaleidoscope Audio Reactivity
+                if (kaleidoscopePass) {
+                    const baseSides = parseFloat(ui.kaleidoscopeSides.value);
+                    const baseAngle = parseFloat(ui.kaleidoscopeAngle.value);
+                    // Scale sides aggressively with musicDrive: very subtle when low, full range when high
+                    kaleidoscopePass.uniforms['sides'].value = Math.max(0, baseSides * (0.1 + musicDrive * 1.9)); 
+                    // Animate angle with musicDrive: very slight oscillation when low, full oscillation when high
+                    kaleidoscopePass.uniforms['angle'].value = baseAngle + Math.sin(time * 0.5 + musicDrive * 8.0) * (Math.PI * 0.35 * musicDrive * musicDrive);
+                }
+            } else {
+                musicDrive = 0;
+                peakLevel *= PEAK_DECAY_RATE * 0.8; flashIntensity *= FLASH_DECAY * 0.8;
+                bars.forEach((bar, i) => { bar.scale.y = 0.1 + Math.sin(time * 0.5 + i * 0.5) * 0.05 + 0.05; bar.position.y = bar.scale.y / 2; bar.material.color.setHSL((i / NUM_BARS + time * 0.05) % 1, 0.6, 0.2); });
+                centralCore.rotation.x += 0.005 * deltaTime * 60; centralCore.rotation.y += 0.007 * deltaTime * 60;
+                 updateParticles( { geometry: coreParticleGeometry, positions: coreParticlePositions, alphas: coreParticleAlphas, sizes: coreParticleSizes, velocities: coreParticleVelocities, ages: coreParticleAges, lifetimes: coreParticleLifetimes, colors: coreParticleColors }, deltaTime, centralCore.position, 0.1, centralCore.material.color, 0.05 );
+                // ... fallback idle morph
+                const geomA = coreMorphTargets[coreMorphState.from];
+                const geomB = coreMorphTargets[coreMorphState.to];
+                const morphed = morphGeometries(geomA, geomB, coreMorphState.t);
+                const posAttr = centralCore.geometry.attributes.position;
+                for (let i = 0; i < morphed.length; i += 3) {
+                    let x = morphed[i], y = morphed[i+1], z = morphed[i+2];
+                    const r = Math.sqrt(x*x + y*y + z*z);
+                    const theta = Math.atan2(y, x);
+                    const phi = Math.acos(z / (r+0.0001));
+                    const disp = 0.7 + Math.sin(time*2 + theta*3 + phi*5) * 0.5 + Math.cos(time*3 + phi*7) * 0.3;
+                    // SAFETY CHECK
+                    if (!isFinite(x) || !isFinite(y) || !isFinite(z) || !isFinite(disp)) { x = y = z = 0; }
+                    posAttr.array[i] = x * disp;
+                    posAttr.array[i+1] = y * disp;
+                    posAttr.array[i+2] = z * disp;
+                }
+                scrubNaNPositions(posAttr.array);
+                warnIfNaNPositions(posAttr.array, 'centralCore');
+                posAttr.needsUpdate = true;
+                // Revert Kaleidoscope to base values when no audio
+                if (kaleidoscopePass) {
+                    kaleidoscopePass.uniforms['sides'].value = parseFloat(ui.kaleidoscopeSides.value);
+                    kaleidoscopePass.uniforms['angle'].value = parseFloat(ui.kaleidoscopeAngle.value);
+                }
+            }
+
+            updateShockwaves(deltaTime, musicDrive);
+            const lights = scene.userData.lights;
+            lights.pLight1.intensity = (0.5 + midEnergy * 1.5 + peakLevel * 1.0) * (0.1 + 0.9 * musicDrive); // More aggressive musicDrive influence
+            lights.pLight1.color.setHSL((time * 0.03 + bassEnergy * 0.2) % 1, 0.9, 0.55);
+            lights.pLight2.intensity = (0.5 + highEnergy * 1.5 + peakLevel * 1.0) * (0.1 + 0.9 * musicDrive); // More aggressive musicDrive influence
+            lights.pLight2.color.setHSL((time * 0.035 + midEnergy * 0.2 + 0.5) % 1, 0.9, 0.55);
+            lights.pLight3.intensity = (peakLevel > 0.4 ? (Math.random() > 0.3 ? peakLevel * 2.5 : 0.05) : 0.1 + bassEnergy * 0.7) * musicDrive * musicDrive; // More aggressive musicDrive influence
+            lights.pLight3.position.x = Math.sin(time * 0.5 + bassEnergy) * (30 + midEnergy * 20 * musicDrive); // Increased musicDrive influence
+            lights.pLight3.position.z = Math.cos(time * 0.4 + midEnergy) * (20 + highEnergy * 10 * musicDrive); // Increased musicDrive influence
+
+            // --- Dynamic camera orbits and spins ---
+            let camBaseRadius = 30 + 35 * Math.sin(time * 0.13 + bassEnergy * 5.0 * musicDrive) + 30 * peakLevel * musicDrive; // Increased musicDrive and peakLevel influence, lower base radius
+            let camTheta = time * (0.25 + 0.4 * midEnergy * musicDrive) + Math.sin(time * 0.4) * 0.3 + peakLevel * 0.5 * musicDrive; // Increased musicDrive influence and added peakLevel
+            let camPhi = Math.PI/2 + Math.sin(time * 0.11 + highEnergy * 6.0 * musicDrive) * 0.6 + Math.cos(time * 0.17 + bassEnergy * 3.5 * musicDrive) * 0.4; // Increased musicDrive influence
+            let camY = 8 + Math.sin(time * 0.25) * 10 + highEnergy * 25 * musicDrive + peakLevel * 18 * musicDrive; // Increased musicDrive influence and lower base Y
+            let camZ = camBaseRadius * Math.cos(camTheta) * Math.sin(camPhi) + 40 + peakLevel * 10 * musicDrive; // Added peakLevel influence
+            let camX = camBaseRadius * Math.sin(camTheta) * Math.sin(camPhi);
+            // Subtle camera shake for overall reactivity
+            if (musicDrive > 0.1) {
+                camX += (Math.random() - 0.5) * 0.5 * musicDrive; 
+                camY += (Math.random() - 0.5) * 0.5 * musicDrive;
+                camZ += (Math.random() - 0.5) * 0.5 * musicDrive;
+            }
+
+            // SAFETY CHECK
+            if (!isFinite(camX) || !isFinite(camY) || !isFinite(camZ)) { camX = 0; camY = 15; camZ = 50; }
+
+            // Camera spin/zoom effect
+            if (cameraSpinState.spinning) {
+                cameraSpinState.t = (time - cameraSpinState.startTime) / cameraSpinState.duration;
+                if (cameraSpinState.t >= 1) {
+                    cameraSpinState.spinning = false;
+                    cameraSpinState.t = 0;
+                } else {
+                    // Wild spin: rotate camera around core, zoom in/out, and roll
+                    const spinT = Math.sin(cameraSpinState.t * Math.PI);
+                    camTheta += spinT * Math.PI * 2 * (cameraSpinState.type === 'wild' ? 2.0 : 1.0); // Increased spin intensity
+                    camPhi += spinT * 0.8; // Increased phi change
+                    camY += spinT * 25; // Increased Y movement
+                    camZ += spinT * 25; // Increased Z movement
+                    camera.rotation.z = spinT * Math.PI * (cameraSpinState.type === 'wild' ? 1.5 : 0.75); // Increased roll intensity
+                    camera.fov = BASE_FOV - peakLevel * 60 * musicDrive + bassEnergy * 20 * musicDrive + spinT * 60; // Increased musicDrive influence and spin FOV
+                }
+            } else {
+                camera.rotation.z = peakLevel * (Math.sin(time * 6)) * 0.9 * musicDrive - bassEnergy * 0.4 * musicDrive; // Increased musicDrive influence and rotation intensity
+                camera.fov = BASE_FOV - peakLevel * 60 * musicDrive + bassEnergy * 20 * musicDrive + overallAmplitude * 10 * musicDrive; // Increased musicDrive influence and added overallAmplitude
+            }
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(centralCore.position);
+            camera.fov = Math.max(15, Math.min(120, camera.fov)); // Wider FOV range
+            camera.updateProjectionMatrix();
+
+            starField.rotation.x += (0.0001 + bassEnergy * 0.003 * musicDrive + peakLevel * 0.0015 * musicDrive) * deltaTime * 60; // Increased musicDrive influence
+            starField.rotation.y += (0.0002 + midEnergy * 0.003 * musicDrive + peakLevel * 0.0015 * musicDrive) * deltaTime * 60; // Increased musicDrive influence
+
+            if (flashIntensity > 0.01) {
+                const flashColor = new THREE.Color().setHSL(Math.random(), 0.3, 0.5 + flashIntensity * 0.5);
+                if (!scene.userData.originalBackground) { scene.userData.originalBackground = scene.background ? scene.background.clone() : null; }
+                scene.background = flashColor; flashIntensity *= FLASH_DECAY;
+            } else if (scene.userData.originalBackground !== undefined) {
+                scene.background = scene.userData.originalBackground; delete scene.userData.originalBackground;
+            }
+            updateRibbonParticles(time, bassEnergy, midEnergy, highEnergy, overallAmplitude, peakLevel, musicDrive);
+
+            // New: Update Vortex Trails
+            updateVortexTrails(time, musicDrive, overallAmplitude);
+
+            // New: Update Breathing Orb
+            if (breathingOrb) {
+                const breathIntensity = 0.2 + 0.3 * Math.abs(Math.sin(time * 0.5));
+                const audioInfluence = peakLevel * 0.5;
+                breathingOrb.material.opacity = breathIntensity * (0.2 + audioInfluence);
+                breathingOrb.scale.setScalar(1.0 + 0.2 * Math.sin(time * 0.7) + audioInfluence * 0.3);
+            }
+            
+            // Update bass drum orb
+            if (bassDrumOrb) {
+                const bassIntensity = Math.max(0, peakLevel - 0.3) * 2;
+                bassDrumOrb.material.opacity = bassIntensity * 0.8;
+                bassDrumOrb.scale.setScalar(1.0 + bassIntensity * 0.5);
+            }
+            
+            // Update serpent core
+            if (serpentCore) {
+                serpentCore.material.uniforms.time.value = time;
+                serpentCore.material.uniforms.musicDrive.value = peakLevel;
+                serpentCore.rotation.x = time * 0.2;
+                serpentCore.rotation.y = time * 0.3;
+                serpentCore.rotation.z = time * 0.1;
+                
+                // Dynamic scale based on audio
+                const scale = 1.0 + peakLevel * 0.3;
+                serpentCore.scale.set(scale, scale, scale);
+            }
+
+            // Animate chromatic shader params with music
+            if (chromaPsyPass) {
+                chromaPsyPass.uniforms['time'].value = time;
+                chromaPsyPass.uniforms['intensity'].value = 0.008 + 0.07 * (peakLevel + bassEnergy*1.2) * musicDrive; // Increased musicDrive influence
+                chromaPsyPass.uniforms['colorCycle'].value = (time*0.07 + midEnergy*5.0 * musicDrive + highEnergy*4.0 * musicDrive) % 1; // Increased musicDrive influence
+            }
+
+            if (fractalPalettePass) {
+                fractalPalettePass.uniforms['iTime'].value = time;
+                fractalPalettePass.uniforms['iResolution'].value.set(window.innerWidth, window.innerHeight);
+                fractalPalettePass.uniforms['musicDrive'].value = musicDrive;
+                fractalPalettePass.uniforms['opacity'].value = 0.45 + 0.25 * Math.abs(Math.sin(time*0.2 + peakLevel));
+            }
+
+            if (patchworkPass) {
+                patchworkPass.uniforms['iTime'].value = time;
+                patchworkPass.uniforms['enabled'].value = ui.patchworkToggle.checked ? 1.0 : 0.0;
+                patchworkPass.uniforms['snareTrigger'].value = snareTrigger;
+                patchworkPass.uniforms['musicDrive'].value = musicDrive;
+            }
+
+            updateGalaxyParticles(time, musicDrive);
+            updateWaveParticles(time, musicDrive, frequencyData);
+
+            composer.render(deltaTime);
+
+            // Update central core morphing
+            if (centralCore) {
+                // More aggressive morphing based on audio
+                const morphSpeed = 0.5 + peakLevel * 2.0;
+                coreMorphState.t += deltaTime * morphSpeed;
+                
+                // Switch morph targets more frequently with higher audio
+                if (coreMorphState.t >= 1.0 || (time - coreMorphState.lastSwitch) > (2.0 - peakLevel * 1.5)) {
+                    coreMorphState.t = 0;
+                    coreMorphState.from = coreMorphState.to;
+                    const shapes = ['sphere', 'torus', 'knot'];
+                    const currentIndex = shapes.indexOf(coreMorphState.to);
+                    coreMorphState.to = shapes[(currentIndex + 1) % shapes.length];
+                    coreMorphState.lastSwitch = time;
+                }
+                
+                // Apply morphing
+                const positions = morphGeometries(
+                    coreMorphTargets[coreMorphState.from],
+                    coreMorphTargets[coreMorphState.to],
+                    coreMorphState.t
+                );
+                centralCore.geometry.attributes.position.array = positions;
+                centralCore.geometry.attributes.position.needsUpdate = true;
+                
+                // Dynamic scaling based on audio
+                const scale = 1.0 + peakLevel * 0.5;
+                centralCore.scale.set(scale, scale, scale);
+                
+                // Add some rotation
+                centralCore.rotation.x = time * 0.2;
+                centralCore.rotation.y = time * 0.3;
+                
+                // Update material properties
+                centralCore.material.emissiveIntensity = 0.5 + peakLevel * 0.5;
+                centralCore.material.opacity = 0.6 + peakLevel * 0.4;
+                
+                // Add color cycling
+                const hue = (time * 0.1 + peakLevel * 0.5) % 1;
+                centralCore.material.color.setHSL(hue, 0.8, 0.5);
+                centralCore.material.emissive.setHSL(hue, 0.8, 0.3);
+
+                // Add orbital movement
+                const orbitRadius = 15; // Slightly smaller than serpent's orbit
+                const orbitSpeed = 0.15; // Slightly faster than serpent
+                const orbitHeight = 3; // Different height variation
+                
+                // Calculate position based on a different orbit
+                const orbitAngle = time * orbitSpeed;
+                centralCore.position.x = Math.cos(orbitAngle) * orbitRadius;
+                centralCore.position.z = Math.sin(orbitAngle) * orbitRadius;
+                centralCore.position.y = Math.sin(time * 0.7) * orbitHeight; // Different frequency
+                
+                // Make it face the camera
+                centralCore.lookAt(camera.position);
+            }
+
+            // Update breathing orb with reduced influence
+            if (breathingOrb) {
+                const breathIntensity = 0.1 + 0.2 * Math.abs(Math.sin(time * 0.5));
+                const audioInfluence = peakLevel * 0.3; // Reduced influence
+                breathingOrb.material.opacity = breathIntensity * (0.1 + audioInfluence);
+                breathingOrb.scale.setScalar(1.0 + 0.1 * Math.sin(time * 0.7) + audioInfluence * 0.2);
+            }
+            
+            // Update bass drum orb with reduced influence
+            if (bassDrumOrb) {
+                const bassIntensity = Math.max(0, peakLevel - 0.3) * 1.5;
+                bassDrumOrb.material.opacity = bassIntensity * 0.6;
+                bassDrumOrb.scale.setScalar(1.0 + bassIntensity * 0.3);
+            }
+
+            // Update fractal distortion
+            if (fractalPalettePass) {
+                // Reduced distortion frequency and increased threshold
+                if (peakLevel > 0.15 && Math.random() < 0.001) {  // Reduced frequency, increased threshold
+                    fractalPalettePass.uniforms.distortionPhase.value = 1.0;
+                }
+                if (fractalPalettePass.uniforms.distortionPhase.value > 0) {
+                    fractalPalettePass.uniforms.distortionPhase.value -= 0.003;  // Slower fade
+                }
+                
+                // Reduced audio sensitivity
+                fractalPalettePass.uniforms.audioLevel.value = peakLevel * 0.8;  // Reduced from 1.5
+            }
+
+            // Update DNA helices
+            if (helices.length > 0) { // Add check for helices existence
+                helices.forEach((helix, index) => {
+                    const time = clock.getElapsedTime();
+                    const angle = (index / NUM_HELICES) * Math.PI * 2;
+                    
+                    // Rotate around the scene
+                    helix.position.x = Math.cos(time * 0.2 + angle) * 40;
+                    helix.position.z = Math.sin(time * 0.2 + angle) * 40;
+                    
+                    // Add some vertical movement
+                    helix.position.y = Math.sin(time * 0.5 + index) * 5;
+                    
+                    // Rotate the helix
+                    helix.rotation.y = time * 0.3;
+                    helix.rotation.x = Math.sin(time * 0.2) * 0.2;
+                    
+                    // Update colors
+                    const hue = (time * 0.1 + index * 0.3) % 1;
+                    helix.material.color.setHSL(hue, 0.8, 0.5);
+                    
+                    // Pulse opacity with audio
+                    helix.material.opacity = 0.3 + peakLevel * 0.4;
+                });
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Galaxy/Starfield Particle System ---
+        function initGalaxyParticles() {
+            const geometry = new THREE.BufferGeometry();
+            galaxyParticlePositions = new Float32Array(MAX_GALAXY_PARTICLES * 3);
+            galaxyParticleColors = new Float32Array(MAX_GALAXY_PARTICLES * 3);
+            galaxyParticleSpeeds = new Float32Array(MAX_GALAXY_PARTICLES);
+            galaxyParticleAngles = new Float32Array(MAX_GALAXY_PARTICLES);
+            galaxyParticleRadii = new Float32Array(MAX_GALAXY_PARTICLES);
+            galaxyParticleTwists = new Float32Array(MAX_GALAXY_PARTICLES);
+            for (let i = 0; i < MAX_GALAXY_PARTICLES; i++) {
+                galaxyParticleAngles[i] = Math.random() * Math.PI * 2;
+                galaxyParticleRadii[i] = 80 + Math.random() * 220;
+                galaxyParticleSpeeds[i] = 0.02 + Math.random() * 0.08;
+                galaxyParticleTwists[i] = Math.random() * 2.5 + 1.5;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(galaxyParticlePositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(galaxyParticleColors, 3));
+            const material = new THREE.PointsMaterial({ size: 0.7, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+            galaxyParticleSystem = new THREE.Points(geometry, material);
+            scene.add(galaxyParticleSystem);
+            galaxyParticleGeometry = geometry;
+        }
+
+        function updateGalaxyParticles(time, musicDrive) {
+            for (let i = 0; i < MAX_GALAXY_PARTICLES; i++) {
+                let angle = galaxyParticleAngles[i] + time * galaxyParticleSpeeds[i] * (0.7 + musicDrive * 3.0); // Increased music drive sensitivity
+                let radius = galaxyParticleRadii[i] * (1.0 + 0.2 * Math.sin(time * 0.2 + i * 0.01 + musicDrive * 2.5)); // Increased music drive sensitivity
+                let twist = galaxyParticleTwists[i];
+                let x = Math.cos(angle) * radius + Math.sin(angle * twist) * 35.0 * musicDrive; // Increased music drive influence
+                let y = Math.sin(angle * 0.7 + time * 0.1) * 35.0 * (0.5 + musicDrive * 2.5); // Increased music drive influence
+                let z = Math.sin(angle) * radius + Math.cos(angle * twist) * 35.0 * musicDrive; // Increased music drive influence
+                if (!isFinite(x) || !isFinite(y) || !isFinite(z)) { x = y = z = 0; }
+                galaxyParticlePositions[i*3] = x;
+                galaxyParticlePositions[i*3+1] = y;
+                galaxyParticlePositions[i*3+2] = z;
+                // Color: spiral rainbow
+                const hue = ((angle / Math.PI * 0.5) + time * 0.03 + i * 0.0007 + musicDrive * 0.5) % 1; // Increased music drive color sensitivity
+                const color = new THREE.Color().setHSL(hue, 0.7 + 0.3 * Math.sin(time + i * 0.01), 0.6 + 0.2 * Math.sin(time * 0.5 + i * 0.02));
+                galaxyParticleColors[i*3] = color.r;
+                galaxyParticleColors[i*3+1] = color.g;
+                galaxyParticleColors[i*3+2] = color.b;
+            }
+            scrubNaNPositions(galaxyParticlePositions);
+            warnIfNaNPositions(galaxyParticlePositions, 'galaxyParticles');
+            galaxyParticleGeometry.attributes.position.needsUpdate = true;
+            galaxyParticleGeometry.attributes.customColor.needsUpdate = true;
+        }
+
+        // --- Concentric Wave Particle System ---
+        function initWaveParticles() {
+            const geometry = new THREE.BufferGeometry();
+            waveParticlePositions = new Float32Array(MAX_WAVE_PARTICLES * 3);
+            waveParticleColors = new Float32Array(MAX_WAVE_PARTICLES * 3);
+            waveParticleAngles = new Float32Array(MAX_WAVE_PARTICLES);
+            waveParticleRadii = new Float32Array(MAX_WAVE_PARTICLES);
+            waveParticleBands = new Float32Array(MAX_WAVE_PARTICLES);
+            for (let i = 0; i < MAX_WAVE_PARTICLES; i++) {
+                waveParticleAngles[i] = Math.random() * Math.PI * 2;
+                waveParticleRadii[i] = 12 + Math.floor(i / 60) * 3 + Math.random() * 2.5;
+                waveParticleBands[i] = Math.floor(i / 60) % 6;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(waveParticlePositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(waveParticleColors, 3));
+            const material = new THREE.PointsMaterial({ size: 0.45, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+            waveParticleSystem = new THREE.Points(geometry, material);
+            scene.add(waveParticleSystem);
+            waveParticleGeometry = geometry;
+        }
+
+        function updateWaveParticles(time, musicDrive, frequencyData) {
+            for (let i = 0; i < MAX_WAVE_PARTICLES; i++) {
+                let angle = waveParticleAngles[i] + time * (0.5 + 1.5 * musicDrive) + Math.sin(time * 0.7 + i * 0.01) * 0.5; // Increased music drive and sin amplitude
+                let band = waveParticleBands[i];
+                let freq = frequencyData ? frequencyData[Math.floor(band * (frequencyData.length / 6))] / 255 : 0.5;
+                let radius = waveParticleRadii[i] * (0.8 + 0.6 * Math.sin(time * 1.2 + band * 0.7 + freq * 4.0) * musicDrive); // Increased freq sensitivity and musicDrive
+                let x = Math.cos(angle) * radius;
+                let y = Math.sin(time * 1.5 + band * 0.5 + i * 0.01) * (1.5 + freq * 5.0) * musicDrive; // Increased freq sensitivity and musicDrive
+                let z = Math.sin(angle) * radius;
+                if (!isFinite(x) || !isFinite(y) || !isFinite(z)) { x = y = z = 0; }
+                waveParticlePositions[i*3] = x;
+                waveParticlePositions[i*3+1] = y;
+                waveParticlePositions[i*3+2] = z;
+                // Color: banded rainbow
+                const hue = ((angle / Math.PI * 0.5) + time * 0.09 + band * 0.13) % 1;
+                const color = new THREE.Color().setHSL(hue, 0.8 + 0.15 * musicDrive, 0.5 + 0.5 * freq * musicDrive); // Increased freq color sensitivity and musicDrive
+                waveParticleColors[i*3] = color.r;
+                waveParticleColors[i*3+1] = color.g;
+                waveParticleColors[i*3+2] = color.b;
+            }
+            scrubNaNPositions(waveParticlePositions);
+            warnIfNaNPositions(waveParticlePositions, 'waveParticles');
+            waveParticleGeometry.attributes.position.needsUpdate = true;
+            waveParticleGeometry.attributes.customColor.needsUpdate = true;
+        }
+
+        // Add at top-level in script:
+        function scrubNaNPositions(array) {
+            for (let i = 0; i < array.length; i++) {
+                if (!isFinite(array[i])) array[i] = 0;
+            }
+        }
+
+        // Utility: Warn if any NaN in positions
+        function warnIfNaNPositions(array, label) {
+            for (let i = 0; i < array.length; i++) {
+                if (!isFinite(array[i])) {
+                    console.warn('NaN detected in', label, 'at index', i);
+                    break;
+                }
+            }
+        }
+
+        // Patchwork/Glitch Shader (lightweight, visually dynamic)
+        const PatchworkShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'iTime': { value: 0 },
+                'enabled': { value: 1.0 },
+                'snareTrigger': { value: 0.0 },
+                'musicDrive': { value: 0.0 },
+            },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float iTime;
+                uniform float enabled;
+                uniform float snareTrigger;
+                uniform float musicDrive;
+                varying vec2 vUv;
+                // Hash function for pseudo-randomness
+                vec2 hash(vec2 p) {
+                    return fract(sin(p * 543.43) * 43758.5453 + vec2(0.123, 0.456));
+                }
+                // Voronoi cell function: returns vec3(minDist, cellCenter.x, cellCenter.y)
+                vec3 voronoi(vec2 x) {
+                    vec2 n = floor(x);
+                    vec2 f = fract(x);
+                    float minDist = 8.0;
+                    vec2 cellCenter = vec2(0.0);
+                    for(int j=-1; j<=1; j++)
+                    for(int i=-1; i<=1; i++) {
+                        vec2 neighbor = vec2(float(i), float(j));
+                        // Animate cell centers with time and musicDrive
+                        vec2 p = hash(n + neighbor) + 0.5 * sin(iTime + musicDrive * 7.0 + dot(n+neighbor, vec2(7.0,3.0))); // Increased music drive sensitivity
+                        vec2 diff = neighbor + p - f;
+                        float d = length(diff);
+                        if(d < minDist) {
+                            minDist = d;
+                            cellCenter = p + n + neighbor;
+                        }
+                    }
+                    return vec3(minDist, cellCenter);
+                }
+                void main() {
+                    if (enabled < 0.5) {
+                        gl_FragColor = texture2D(tDiffuse, vUv);
+                        return;
+                    }
+                    float scale = mix(8.0, 25.0, 0.5 + 0.5 * sin(iTime * 0.2 + musicDrive * 3.0)); // Increased scale sensitivity
+                    vec3 v = voronoi(vUv * scale + musicDrive * 3.0 * vec2(sin(iTime), cos(iTime))); // Increased music drive influence
+                    float cellDist = v.x;
+                    vec2 cellCenter = vec2(v.y, v.z);
+
+                    // Animate cell color/brightness with snare/music
+                    vec4 col = texture2D(tDiffuse, vUv + 0.02 * sin(iTime + cellCenter));
+                    float edge = smoothstep(0.08, 0.12, cellDist);
+                    float pulse = 0.5 + 0.5 * sin(iTime * 15.0 + cellCenter.x * 3.0 + cellCenter.y * 3.0 + musicDrive * 7.0); // Increased pulse sensitivity
+                    float snarePulse = snareTrigger > 0.5 ? 1.0 : 0.0;
+
+                    // Organic color modulation
+                    col.rgb = mix(col.rgb, vec3(1.0, 0.2, 0.8), 0.3 * pulse * musicDrive + 0.7 * snarePulse * edge); // Increased color modulation sensitivity
+
+                    // Edge highlight
+                    col.rgb += edge * 0.3 * (musicDrive + snarePulse); // Increased edge highlight sensitivity
+
+                    // Occasional inversion
+                    if (snarePulse > 0.5 && edge > 0.8) col.rgb = 1.0 - col.rgb;
+
+                    gl_FragColor = col;
+                }
+            `
+        };
+        let patchworkPass;
+
+        // --- Vortex Trails Particle System ---
+        function initVortexTrails() {
+            const geometry = new THREE.BufferGeometry();
+            vortexTrailPositions = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES * 3);
+            vortexTrailColors = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES * 3);
+            vortexTrailAlphas = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailSizes = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailAges = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailLifetimes = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailSpeeds = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailAngles = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailRadii = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES);
+            vortexTrailOffsets = new Float32Array(MAX_VORTEX_TRAIL_PARTICLES * 3);
+
+            for (let i = 0; i < MAX_VORTEX_TRAIL_PARTICLES; i++) {
+                vortexTrailAges[i] = Math.random() * 5; // Start at random age for initial dispersion
+                vortexTrailLifetimes[i] = 5 + Math.random() * 10;
+                vortexTrailSpeeds[i] = 0.05 + Math.random() * 0.2;
+                vortexTrailAngles[i] = Math.random() * Math.PI * 2;
+                vortexTrailRadii[i] = 10 + Math.random() * 30;
+                vortexTrailOffsets[i*3] = (Math.random() - 0.5) * 20;
+                vortexTrailOffsets[i*3+1] = (Math.random() - 0.5) * 20;
+                vortexTrailOffsets[i*3+2] = (Math.random() - 0.5) * 20;
+
+                const hue = Math.random();
+                const color = new THREE.Color().setHSL(hue, 0.7, 0.5);
+                vortexTrailColors[i*3] = color.r;
+                vortexTrailColors[i*3+1] = color.g;
+                vortexTrailColors[i*3+2] = color.b;
+
+                vortexTrailAlphas[i] = 0;
+                vortexTrailSizes[i] = 0.5 + Math.random() * 1.5;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(vortexTrailPositions, 3));
+            geometry.setAttribute('customColor', new THREE.BufferAttribute(vortexTrailColors, 3));
+            geometry.setAttribute('alpha', new THREE.BufferAttribute(vortexTrailAlphas, 1));
+            geometry.setAttribute('size', new THREE.BufferAttribute(vortexTrailSizes, 1));
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: ParticleShader.uniforms,
+                vertexShader: ParticleShader.vertexShader,
+                fragmentShader: ParticleShader.fragmentShader,
+                blending: THREE.AdditiveBlending,
+                depthTest: false,
+                transparent: true
+            });
+            vortexTrailSystem = new THREE.Points(geometry, material);
+            scene.add(vortexTrailSystem);
+            vortexTrailGeometry = geometry;
+        }
+
+        function updateVortexTrails(time, musicDrive, overallAmplitude) {
+            for (let i = 0; i < MAX_VORTEX_TRAIL_PARTICLES; i++) {
+                vortexTrailAges[i] += clock.getDelta();
+                const progress = vortexTrailAges[i] / vortexTrailLifetimes[i];
+
+                if (progress >= 1 || vortexTrailAlphas[i] === 0) {
+                    // Reset particle
+                    vortexTrailAges[i] = 0;
+                    vortexTrailLifetimes[i] = 5 + Math.random() * 10; // Longer lifetimes
+                    vortexTrailSpeeds[i] = 0.05 + Math.random() * 0.2 + musicDrive * 0.3; // Speed affected by musicDrive
+                    vortexTrailAngles[i] = Math.random() * Math.PI * 2;
+                    vortexTrailRadii[i] = 10 + Math.random() * 30 + musicDrive * 20; // Radius affected by musicDrive
+                    vortexTrailOffsets[i*3] = (Math.random() - 0.5) * 20;
+                    vortexTrailOffsets[i*3+1] = (Math.random() - 0.5) * 20;
+                    vortexTrailOffsets[i*3+2] = (Math.random() - 0.5) * 20;
+
+                    const hue = (time * 0.01 + Math.random() * 0.2 + musicDrive * 0.5) % 1; // Color cycle with musicDrive
+                    const color = new THREE.Color().setHSL(hue, 0.7 + musicDrive * 0.2, 0.5 + overallAmplitude * 0.3); // Saturation/lightness with audio
+                    vortexTrailColors[i*3] = color.r;
+                    vortexTrailColors[i*3+1] = color.g;
+                    vortexTrailColors[i*3+2] = color.b;
+
+                    vortexTrailAlphas[i] = 0.1 + Math.random() * 0.3 + musicDrive * 0.6; // Alpha strongly affected by musicDrive
+                    vortexTrailSizes[i] = (0.5 + Math.random() * 1.5) * (1 + musicDrive * 2.0); // Size strongly affected by musicDrive
+                }
+
+                // Update position (spiral/vortex motion)
+                let angle = vortexTrailAngles[i] + time * vortexTrailSpeeds[i];
+                let x = Math.cos(angle) * vortexTrailRadii[i] + vortexTrailOffsets[i*3];
+                let y = Math.sin(angle * 2 + time * 0.5) * (5 + musicDrive * 10) + vortexTrailOffsets[i*3+1]; // Y influenced by musicDrive
+                let z = Math.sin(angle) * vortexTrailRadii[i] + vortexTrailOffsets[i*3+2];
+
+                // Apply subtle rotation around Y axis for a 'swirling' effect
+                const swirlFactor = 0.5 + musicDrive * 1.5; // Swirl more with music
+                const swirlAngle = time * 0.05 * swirlFactor;
+                const tempX = x;
+                x = tempX * Math.cos(swirlAngle) - z * Math.sin(swirlAngle);
+                z = tempX * Math.sin(swirlAngle) + z * Math.cos(swirlAngle);
+
+                // Fade out particle
+                vortexTrailAlphas[i] = Math.max(0, vortexTrailAlphas[i] * (1 - progress * 0.05)); // Gradual fade
+
+                // SAFETY CHECK
+                if (!isFinite(x) || !isFinite(y) || !isFinite(z)) { x = y = z = 0; }
+
+                vortexTrailPositions[i*3] = x;
+                vortexTrailPositions[i*3+1] = y;
+                vortexTrailPositions[i*3+2] = z;
+            }
+
+            scrubNaNPositions(vortexTrailPositions);
+            warnIfNaNPositions(vortexTrailPositions, 'vortexTrailParticles');
+            vortexTrailGeometry.attributes.position.needsUpdate = true;
+            vortexTrailGeometry.attributes.customColor.needsUpdate = true;
+            vortexTrailGeometry.attributes.alpha.needsUpdate = true;
+            vortexTrailGeometry.attributes.size.needsUpdate = true;
+        }
+
+        function createDNAHelix() {
+            const points = [];
+            const colors = [];
+            const indices = [];
+            
+            for (let i = 0; i < HELIX_POINTS; i++) {
+                const t = i / (HELIX_POINTS - 1);
+                const angle = t * Math.PI * 8;
+                const radius = HELIX_RADIUS;
+                const height = (t - 0.5) * HELIX_HEIGHT;
+                
+                // First strand
+                points.push(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+                
+                // Second strand (offset by PI)
+                points.push(
+                    Math.cos(angle + Math.PI) * radius,
+                    height,
+                    Math.sin(angle + Math.PI) * radius
+                );
+                
+                // Colors
+                const hue = (t + clock.getElapsedTime() * 0.1) % 1;
+                const color1 = new THREE.Color().setHSL(hue, 0.8, 0.5);
+                const color2 = new THREE.Color().setHSL((hue + 0.5) % 1, 0.8, 0.5);
+                
+                colors.push(color1.r, color1.g, color1.b);
+                colors.push(color2.r, color2.g, color2.b);
+                
+                if (i < HELIX_POINTS - 1) {
+                    const base = i * 2;
+                    indices.push(base, base + 1, base + 2);
+                    indices.push(base + 1, base + 3, base + 2);
+                }
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            
+            const material = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            
+            const helix = new THREE.Mesh(geometry, material);
+            console.log('Created DNA helix:', helix); // Debug log
+            return helix;
+        }
+
+        function createSerpentineCore() {
+            const points = [];
+            const colors = [];
+            const indices = [];
+            
+            for (let i = 0; i < SERPENTINE_POINTS; i++) {
+                const t = i / (SERPENTINE_POINTS - 1);
+                const angle = t * Math.PI * 8;
+                const radius = SERPENTINE_RADIUS;
+                const height = (t - 0.5) * SERPENTINE_HEIGHT;
+                
+                // First strand
+                points.push(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+                
+                // Second strand (offset by PI)
+                points.push(
+                    Math.cos(angle + Math.PI) * radius,
+                    height,
+                    Math.sin(angle + Math.PI) * radius
+                );
+                
+                // Colors
+                const hue = (t + clock.getElapsedTime() * 0.1) % 1;
+                const color1 = new THREE.Color().setHSL(hue, 0.8, 0.5);
+                const color2 = new THREE.Color().setHSL((hue + 0.5) % 1, 0.8, 0.5);
+                
+                colors.push(color1.r, color1.g, color1.b);
+                colors.push(color2.r, color2.g, color2.b);
+                
+                if (i < SERPENTINE_POINTS - 1) {
+                    const base = i * 2;
+                    indices.push(base, base + 1, base + 2);
+                    indices.push(base + 1, base + 3, base + 2);
+                }
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            
+            const material = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide
+            });
+            
+            const core = new THREE.Mesh(geometry, material);
+            core.position.set(0, 0, 0);  // Fixed at center
+            return core;
+        }
+
+        function createMorphingCore() {
+            const geometry = new THREE.IcosahedronGeometry(5, 2);
+            const material = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8,
+                wireframe: true
+            });
+            
+            const core = new THREE.Mesh(geometry, material);
+            core.position.set(0, 0, 0);  // Fixed at center
+            return core;
+        }
+
+        init();
+    </script>
+</body>
+</html>
